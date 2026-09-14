@@ -59,8 +59,12 @@ export class ApiError extends Error {
       status === 401
         ? "Your session has expired or been revoked. Please sign in again."
         : status === 403
-          ? "This account cannot view corridor data."
-          : status === 404
+          ? "This account is not authorized for this action in the selected corridor."
+          : status === 409
+            ? "This action conflicts with the current record. Refresh its state before trying again."
+            : status === 422
+              ? "The information is invalid or outside the permitted corridor. Check the location, dates, and required evidence."
+              : status === 404
             ? "No audited corridor data is available. Ask your administrator to run the replay bootstrap, then refresh."
             : status === 503
               ? "The service is not ready. Check the database and try again."

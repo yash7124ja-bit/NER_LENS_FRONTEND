@@ -61,6 +61,7 @@ export default function OfflineReports({ session, segments, authenticated = true
     <p lang={locale}>{language.t("safety", { lng: locale })}</p>
     {locale === "as" && <p>Assamese draft v1 — not reviewed by a native speaker; use English for operational decisions.</p>}
     <p>Text-only capture. Enter a known location and its accuracy; this form does not request GPS. Saved reports remain on this browser and may contain sensitive location data.</p>
+    {!session.user.roles.includes("field_reporter") && <p className="access-note"><strong>Field reporter access required.</strong> This account cannot submit observations. An administrator must assign the field reporter role.</p>}
     {session.user.roles.includes("field_reporter") && <form onSubmit={capture}>
       <label>Road segment<select required {...register("segment_id")}><option value="">Choose segment</option>{segments.map(segment => <option key={segment.segment_id} value={segment.segment_id}>{segmentName(segment)}</option>)}</select></label>
       <label>Observed time (device local timezone)<input type="datetime-local" required {...register("observed_at")} /></label>

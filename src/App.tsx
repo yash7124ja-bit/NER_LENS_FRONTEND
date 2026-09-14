@@ -1,4 +1,6 @@
 import Login from "./Login";
+import Workflows from "./Workflows";
+import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
 import CorridorMap from "./CorridorMap";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,7 +14,7 @@ import {
   type State,
   type Session,
 } from "./api";
-const words = (value: string) => value.replaceAll("_", " ");
+const words = (value: string) => value === "system_admin" ? "Super Admin" : value.replaceAll("_", " ");
 function Card({
   title,
   subtitle,
@@ -171,10 +173,6 @@ export default function App() {
   useEffect(() => {
     if (!session || draftOnly) return;
     const controller = new AbortController();
-    setCatalog(null);
-    setState(null);
-    setCorridorId("");
-    setSelectedId("");
     setBusy(true);
     setError("");
     request<Catalog>("/v1/corridors", controller.signal)
@@ -201,8 +199,7 @@ export default function App() {
     if (!session || !corridorId || draftOnly) return;
     const controller = new AbortController();
     setBusy(true);
-    setState(null);
-    setSelectedId("");
+    setState(current => current?.corridor_id === corridorId ? current : null);
     setError("");
     request<State>(
       `/v1/corridors/${encodeURIComponent(corridorId)}/state?limit=200`,
@@ -211,14 +208,14 @@ export default function App() {
       .then((data) => {
         if (controller.signal.aborted) return;
         setState(data);
-        setSelectedId(data.segments[0]?.segment_id ?? "");
+        setSelectedId(current => data.segments.some(s => s.segment_id === current) ? current : data.segments[0]?.segment_id ?? "");
       })
       .catch(fail)
       .finally(() => {
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [session, corridorId, draftOnly]);
+  }, [session, corridorId, draftOnly, refresh]);
   async function logout() {
     setSigningOut(true);
     setError("");
@@ -338,14 +335,16 @@ export default function App() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">NORTH EAST REGION · EVIDENCE EXPLORER</p>
-              <h1>Corridor overview</h1>
-              <p>Inspect the evidence behind every segment.</p>
+              <h1>Network control</h1>
+              <p>Monitor corridor conditions, review field evidence, and coordinate deliveries.</p>
             </div>
             <span className="pill">
               {state?.data_mode ?? catalog?.data_mode ?? "Read-only"}
               {state?.data_mode ? " data" : ""}
             </span>
           </div>
+          <div className="workspace-status"><strong>SIH MVP · Replay workspace</strong><p>Provider connection status is shown below. The corridor geometry is synthetic, and route safety and prediction accuracy are not validated. Your account permissions determine which operations you can perform.</p></div>
+          <nav className="workspace-nav" aria-label="Workspace sections"><a href="#segments">Corridor conditions</a><a href="#operations">Operations desk</a><a href="#field-reports">Field reports & offline queue</a><a href="#sources">Source connections</a><a href="#user-stories">SIH user stories</a>{session.user.roles.includes("system_admin") && <a href="#administration">People & access</a>}</nav>
           {error && (
             <div className="notice error" role="alert">
               {error}
@@ -611,7 +610,7 @@ export default function App() {
                             </th>
                             <td>{words(s.direction)}</td>
                             <td>
-                              <span className="pill">
+                              <span className={`pill road-${s.operational_status.value}`}>
                                 {words(s.operational_status.value)}
                               </span>
                             </td>
@@ -665,8 +664,7 @@ export default function App() {
                     <div>
                       <h3>Evidence boundary</h3>
                       <p className="help">
-                        External source retrievals are tracked separately. No
-                        reviewed operational evidence is linked to these replay segments.
+                        External source retrievals are tracked separately. Provider access alone does not establish road passability. Published authority decisions appear in the corridor status.
                       </p>
                       <ul>
                         {state.limitations.map((item) => (
@@ -676,8 +674,10 @@ export default function App() {
                     </div>
                   </div>
                 </Card>
-                <OfflineReports session={session} segments={segments} authenticated={!draftOnly} />
-                {!draftOnly && <SourceHealth owner={session.user.actor_id} />}
+                {!draftOnly && corridor && <Workflows key={corridor.corridor_id + session.user.actor_id} session={session} corridor={corridor} segments={segments} onChange={() => setRefresh(r => r + 1)} />}
+                <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>
+                {!draftOnly && corridor && <Administration key={"admin-" + corridor.corridor_id + session.user.actor_id} session={session} corridorId={corridor.corridor_id} />}
+                {!draftOnly && <div id="sources"><SourceHealth owner={session.user.actor_id} /></div>}
               </div>
             )}
           </>

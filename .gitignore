@@ -6,3 +6,5 @@ dist/
 output/playwright/
 .env*
 !.env.example
+
+.playwright-cli/
