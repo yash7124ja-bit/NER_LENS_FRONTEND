@@ -1,8 +1,11 @@
 import Login from "./Login";
+import OfflineReports from "./OfflineReports";
+import CorridorMap from "./CorridorMap";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ApiError,
-  projectSegments,
   request,
   segmentName,
   type Catalog,
@@ -49,22 +52,12 @@ function Details({ value }: { value: Record<string, unknown> }) {
     </dl>
   );
 }
-function SourceHealth() {
-  const [data, setData] = useState<{sources: {source: string; status: string; reason: string;
-    retrieved_at: string | null; record_count: number}[]; note: string} | null>(null);
-  const [error, setError] = useState("");
-  const [refresh, setRefresh] = useState(0);
-  useEffect(() => {
-    const controller = new AbortController();
-    setError("");
-    request<NonNullable<typeof data>>("/health/sources", controller.signal)
-      .then(value => { if (!controller.signal.aborted) setData(value); })
-      .catch(() => { if (!controller.signal.aborted) setError("Source checks are unavailable. Try again."); });
-    return () => controller.abort();
-  }, [refresh]);
+function SourceHealth({ owner }: { owner: string }) {
+  const { data, error, refetch, isFetching } = useQuery({ queryKey: ["source-health", owner],
+    queryFn: ({ signal }) => request<{ sources: { source: string; status: string; reason: string; retrieved_at: string | null; record_count: number }[]; note: string }>("/health/sources", signal), retry: false });
   return <Card title="External source access" subtitle="Latest provider retrievals">
     <div className="card-bd">
-      {error && <p role="alert">{error}</p>}
+      {error && <p role="alert">Source checks are unavailable. Try again.</p>}
       {!data && !error && <p role="status">Loading source checks…</p>}
       {data && <><p className="help">{data.note}</p><div className="tw"><table>
         <thead><tr>{["Provider", "Status", "Result", "Records", "Checked"].map(label =>
@@ -75,12 +68,16 @@ function SourceHealth() {
           <td>{source.retrieved_at ? new Date(source.retrieved_at).toLocaleString() : "Not checked"}</td>
         </tr>)}</tbody>
       </table></div></>}
-      <button onClick={() => setRefresh(value => value + 1)}>Refresh source checks</button>
+      <button disabled={isFetching} onClick={() => void refetch()}>Refresh source checks</button>
     </div>
   </Card>;
 }
 export default function App() {
+  const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
+  const [draftOnly, setDraftOnly] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const [connected, setConnected] = useState(navigator.onLine);
   const [checking, setChecking] = useState(true),
     [signingOut, setSigningOut] = useState(false);
   const [catalog, setCatalog] = useState<Catalog | null>(null),
@@ -98,10 +95,25 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
     request<Session>("/v1/auth/session", controller.signal)
-      .then((data) => {
+      .then(async (data) => {
+        await clearOfflineContext();
         if (!controller.signal.aborted) setSession(data);
       })
-      .catch((err) => {
+      .catch(async (err) => {
+        if (!controller.signal.aborted && !(err instanceof ApiError)) {
+          try {
+            const cached = await loadOfflineContext();
+            if (cached && !controller.signal.aborted) {
+              setDraftOnly(true);
+              setSavedAt(cached.saved_at);
+              setSession({ user: { ...cached.profile, email: null }, expires_at: "1970-01-01T00:00:00Z" });
+              setCatalog(cached.catalog); setState(cached.state);
+              setCorridorId(cached.state.corridor_id);
+              setSelectedId(cached.state.segments[0]?.segment_id ?? "");
+              return;
+            }
+          } catch { /* Local storage unavailable: show sign-in instead. */ }
+        }
         if (
           !controller.signal.aborted &&
           !(err instanceof ApiError && err.status === 401)
@@ -114,6 +126,15 @@ export default function App() {
     return () => controller.abort();
   }, []);
   useEffect(() => {
+    const update = () => setConnected(navigator.onLine);
+    window.addEventListener("online", update); window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
+  useEffect(() => {
+    if (session && catalog && state && !draftOnly) void saveOfflineContext(session, catalog, state)
+      .catch(() => setError("Offline snapshot could not be saved. Device storage may be unavailable or full."));
+  }, [session, catalog, state, draftOnly]);
+  useEffect(() => {
     const controller = new AbortController();
     fetch("/health/ready", { signal: controller.signal })
       .then((r) => setReady(r.ok ? "API ready" : "API not ready"))
@@ -123,13 +144,16 @@ export default function App() {
     return () => controller.abort();
   }, [refresh]);
   useEffect(() => {
-    if (!session) return;
+    if (!session || draftOnly) return;
     const timer = window.setTimeout(
-      () => fail(new ApiError(401)),
+      () => {
+        if (!navigator.onLine && state) { setDraftOnly(true); setSavedAt(state.as_of); }
+        else fail(new ApiError(401));
+      },
       Math.max(0, new Date(session.expires_at).getTime() - Date.now()),
     );
     return () => window.clearTimeout(timer);
-  }, [session]);
+  }, [session, draftOnly, state]);
   function fail(err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") return;
     setError(
@@ -145,7 +169,7 @@ export default function App() {
     }
   }
   useEffect(() => {
-    if (!session) return;
+    if (!session || draftOnly) return;
     const controller = new AbortController();
     setCatalog(null);
     setState(null);
@@ -171,10 +195,10 @@ export default function App() {
         }
       });
     return () => controller.abort();
-  }, [session, refresh]);
+  }, [session, refresh, draftOnly]);
   useEffect(() => {
     pageRequest.current?.abort();
-    if (!session || !corridorId) return;
+    if (!session || !corridorId || draftOnly) return;
     const controller = new AbortController();
     setBusy(true);
     setState(null);
@@ -194,14 +218,17 @@ export default function App() {
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [session, corridorId]);
+  }, [session, corridorId, draftOnly]);
   async function logout() {
     setSigningOut(true);
     setError("");
     try {
-      await request("/v1/auth/logout", undefined, {});
+      if (!draftOnly) await request("/v1/auth/logout", undefined, {});
+      await clearOfflineContext();
+      queryClient.clear();
       pageRequest.current?.abort();
       setSession(null);
+      setDraftOnly(false);
       setCatalog(null);
       setState(null);
       setCorridorId("");
@@ -252,7 +279,6 @@ export default function App() {
         .includes(query.toLowerCase()),
   );
   const selected = segments.find((s) => s.segment_id === selectedId);
-  const projected = projectSegments(visible);
   return (
     <>
       <a className="skip" href="#main">
@@ -270,7 +296,7 @@ export default function App() {
           </div>
           <div className="tools">
             <span className="stamp">{ready}</span>
-            <button onClick={() => setRefresh((v) => v + 1)} disabled={busy}>
+            <button onClick={() => setRefresh((v) => v + 1)} disabled={busy || draftOnly || !connected}>
               Refresh
             </button>
             {session && (
@@ -280,7 +306,7 @@ export default function App() {
                   <span>{session.user.roles.map(words).join(" · ")}</span>
                 </span>
                 <button onClick={logout} disabled={signingOut}>
-                  {signingOut ? "Signing out…" : "Sign out"}
+                  {signingOut ? "Signing out…" : draftOnly ? "Lock offline view" : "Sign out"}
                 </button>
               </>
             )}
@@ -294,13 +320,21 @@ export default function App() {
       ) : !session ? (
         <Login
           message={error}
-          onLogin={(data) => {
+          onLogin={async (data) => {
             setError("");
+            setDraftOnly(false);
+            setCatalog(null); setState(null);
+            queryClient.clear();
+            await clearOfflineContext();
             setSession(data);
           }}
         />
       ) : (
         <main id="main" className="shell" tabIndex={-1}>
+          {(draftOnly || !connected) && <div className="notice" role="status">
+            Offline / stale snapshot{savedAt ? ` saved ${new Date(savedAt).toLocaleString()}` : ""}. Capture drafts only; displayed road conditions are not current.
+            {draftOnly && <><p>This device profile is not an authenticated session. Sign in again to synchronize.</p><button onClick={() => { setSession(null); setCatalog(null); setState(null); setDraftOnly(false); }}>Sign in again</button></>}
+          </div>}
           <div className="page-heading">
             <div>
               <p className="eyebrow">NORTH EAST REGION · EVIDENCE EXPLORER</p>
@@ -325,7 +359,7 @@ export default function App() {
                   id="corridor"
                   value={corridorId}
                   onChange={(e) => setCorridorId(e.target.value)}
-                  disabled={busy || !catalog?.corridors.length}
+                  disabled={busy || draftOnly || !catalog?.corridors.length}
                 >
                   {!catalog?.corridors.length && (
                     <option value="">No corridors available</option>
@@ -407,71 +441,7 @@ export default function App() {
                       retrieval time records local import, not a live source
                       observation.
                     </p>
-                    <div className="map">
-                      <svg
-                        viewBox="0 0 700 350"
-                        role="img"
-                        aria-label="Geographic overview of displayed corridor segments. Use the segment table below to select and inspect each band."
-                      >
-                        <defs>
-                          <pattern
-                            id="grid"
-                            width="35"
-                            height="35"
-                            patternUnits="userSpaceOnUse"
-                          >
-                            <path
-                              d="M 35 0 L 0 0 0 35"
-                              fill="none"
-                              stroke="#e7e7e1"
-                              strokeWidth="0.6"
-                            />
-                          </pattern>
-                        </defs>
-                        <rect width="700" height="350" fill="url(#grid)" />
-                        <text x="24" y="30" className="map-label">
-                          N ↑
-                        </text>
-                        {projected.map((line, index) => (
-                          <g key={line.id}>
-                            <polyline
-                              points={line.points
-                                .map((p) => p.join(","))
-                                .join(" ")}
-                              fill="none"
-                              stroke={
-                                line.id === selectedId ? "#896020" : "#85857a"
-                              }
-                              strokeWidth={line.id === selectedId ? 5 : 3}
-                              strokeLinecap="round"
-                            />
-                            {line.points[0] && (
-                              <>
-                                <circle
-                                  cx={line.points[0][0]}
-                                  cy={line.points[0][1]}
-                                  r="4"
-                                  fill="#f7f7f5"
-                                  stroke="#54544b"
-                                />
-                                <text
-                                  x={line.points[0][0] + 8}
-                                  y={line.points[0][1] - 8}
-                                  className="map-label"
-                                >
-                                  {index + 1}
-                                </text>
-                              </>
-                            )}
-                          </g>
-                        ))}
-                      </svg>
-                      {!visible.length && (
-                        <p className="map-empty">
-                          No segments match your filters.
-                        </p>
-                      )}
-                    </div>
+                    <CorridorMap segments={visible} selectedId={selectedId} onSelect={setSelectedId} />
                     <div className="map-footer">
                       <span>
                         <i className="legend-line" /> Synthetic band geometry
@@ -671,7 +641,7 @@ export default function App() {
                       Unknown status is not confirmation that a road is open.
                     </span>
                     {state.next_cursor && (
-                      <button disabled={busy} onClick={loadMore}>
+                      <button disabled={busy || draftOnly || !connected} onClick={loadMore}>
                         {busy ? "Loading…" : "Load more segments"}
                       </button>
                     )}
@@ -706,7 +676,8 @@ export default function App() {
                     </div>
                   </div>
                 </Card>
-                <SourceHealth />
+                <OfflineReports session={session} segments={segments} authenticated={!draftOnly} />
+                {!draftOnly && <SourceHealth owner={session.user.actor_id} />}
               </div>
             )}
           </>
@@ -723,3 +694,4 @@ export default function App() {
     </>
   );
 }
+
