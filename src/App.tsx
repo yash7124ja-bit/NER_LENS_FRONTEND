@@ -446,7 +446,7 @@ export default function App() {
                         <i className="legend-line" /> Synthetic band geometry
                       </span>
                       <span>
-                        <i className="legend-line selected" /> Selected band
+                        <i className="legend-line selected" /> Selected band (thicker line)
                       </span>
                       <a href="#segments">Explore in table ↓</a>
                     </div>

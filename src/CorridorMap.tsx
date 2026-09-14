@@ -10,6 +10,7 @@ export default function CorridorMap({segments, selectedId, onSelect}: {
 }) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<Map | null>(null);
+  const fitted = useRef("");
   const selected = useRef(onSelect);
   selected.current = onSelect;
   const [config, setConfig] = useState<{style_url: string | null} | null>(null);
@@ -18,6 +19,8 @@ export default function CorridorMap({segments, selectedId, onSelect}: {
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!container.current || !config) return;
+    fitted.current = "";
+    setReady(false);
     let instance: Map;
     try {
       instance = new Map({container: container.current, style: config.style_url || {version: 8,
@@ -48,7 +51,9 @@ export default function CorridorMap({segments, selectedId, onSelect}: {
       features: segments.map(segment => ({type: "Feature", geometry: segment.geometry,
         properties: {id: segment.segment_id, status: segment.operational_status.value, selected: segment.segment_id === selectedId}}))});
     const points = segments.flatMap(segment => segment.geometry.coordinates);
-    if (points.length) {
+    const boundsKey = JSON.stringify(points);
+    if (points.length && fitted.current !== boundsKey) {
+      fitted.current = boundsKey;
       const xs = points.map(p => p[0]), ys = points.map(p => p[1]);
       instance.fitBounds([[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]],
         {padding: 45, maxZoom: 12, duration: 0});
