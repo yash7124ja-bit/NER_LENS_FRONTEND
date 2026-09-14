@@ -9,11 +9,17 @@ export default function Administration({ session, corridorId }: { session: Sessi
   const [users,setUsers]=useState<User[]>([]),[stories,setStories]=useState<Story[]>([]);
   const [error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false),[revision,setRevision]=useState(0);
   const [filter,setFilter]=useState("");
+  const [index,setIndex]=useState("not_configured"),[results,setResults]=useState<Story[]|null>(null),[searchNote,setSearchNote]=useState("");
   useEffect(() => { const c=new AbortController();
-    request<{stories:Story[]}>(`/v1/user-stories?corridor_id=${encodeURIComponent(corridorId)}`,c.signal).then(r=>setStories(r.stories)).catch(e=>{if(!c.signal.aborted)setError(e.message);});
+    request<{stories:Story[];vector_index:string}>(`/v1/user-stories?corridor_id=${encodeURIComponent(corridorId)}`,c.signal).then(r=>{setStories(r.stories);setIndex(r.vector_index);}).catch(e=>{if(!c.signal.aborted)setError(e.message);});
     if(admin) request<{users:User[]}>(`/v1/admin/users?corridor_id=${encodeURIComponent(corridorId)}`,c.signal).then(r=>setUsers(r.users)).catch(e=>{if(!c.signal.aborted)setError(e.message);});
     return ()=>c.abort();
   },[corridorId,admin,revision]);
+  async function searchIndex(reindex=false){setBusy(true);setError("");setSearchNote("");
+    try { if(reindex){const result=await request<{indexed:number}>(`/v1/admin/user-stories/reindex?corridor_id=${encodeURIComponent(corridorId)}`,undefined,{});setSearchNote(`${result.indexed} stories indexed in Weaviate.`);}
+      else {if(!filter.trim())throw Error("Enter a search term.");const result=await request<{stories:Story[]}>(`/v1/user-stories/search?corridor_id=${encodeURIComponent(corridorId)}&q=${encodeURIComponent(filter.trim())}`);setResults(result.stories);setSearchNote(`${result.stories.length} results from Weaviate keyword search.`);}
+    }catch(e){setError(e instanceof Error?e.message:"Story search is unavailable. The database list remains available.");}finally{setBusy(false);}
+  }
   async function save(e:FormEvent<HTMLFormElement>,user?:User){e.preventDefault();const form=e.currentTarget,d=new FormData(form);setBusy(true);setError("");setMessage("");
     try {const body:Record<string,unknown>={corridor_id:corridorId,roles:d.getAll("roles"),status_authority:d.get("authority")==="on"};
       if(!Array.isArray(body.roles)||!body.roles.length)throw Error("Select at least one role.");
@@ -31,9 +37,9 @@ export default function Administration({ session, corridorId }: { session: Sessi
       {!users.length&&<p className="workflow-empty">No accounts loaded for this corridor.</p>}{users.map(user=><details className="user-access-row" key={user.actor_id}><summary>{user.display_name} · {user.email}<span className="status-tag">{user.roles.map(r=>roles.find(([id])=>id===r)?.[1]??r).join(" / ")}</span></summary><form className="workflow-form" onSubmit={e=>void save(e,user)}><RoleFields user={user}/>{user.actor_id===session.user.actor_id&&<p className="help">This is your account. Keep Super Admin selected; sign in again after changing your operational roles.</p>}<button disabled={busy}>Save roles</button></form></details>)}
     </div></section>}
     <section id="user-stories" className="card"><header className="card-hd"><div><h2>SIH user stories & readiness</h2><p>Persisted acceptance criteria. “Verified in replay” does not mean validated in the field.</p></div></header><div className="card-bd">
-      {!admin&&error&&<p role="alert">{error}</p>}<label>Find a user story<input value={filter} onChange={e=>setFilter(e.target.value)} placeholder="Search role, workflow or acceptance criteria"/></label>
-      <p className="help">Source: application database · Weaviate semantic search awaiting configuration.</p>
-      {stories.filter(s=>JSON.stringify(s).toLowerCase().includes(filter.toLowerCase())).map(s=><details className="story-row" key={s.id}><summary><span className="mono">{s.id}</span> {s.title}<span className={`status-tag story-${s.status}`}>{s.status.replaceAll("_"," ")}</span></summary><p>{s.story}</p><ul>{s.acceptance.map(a=><li key={a}>{a}</li>)}</ul><p className="help"><strong>Evidence / remaining work:</strong> {s.evidence}</p></details>)}
+      {!admin&&error&&<p role="alert">{error}</p>}<label>Find a user story<input value={filter} onChange={e=>{setFilter(e.target.value);setResults(null);setSearchNote("");}} placeholder="Search role, workflow or acceptance criteria"/></label>
+      <p className="help">Source of record: application database · {index === "configured" ? "Weaviate keyword index configured. Semantic embeddings are not enabled." : "Weaviate is not configured; local text filtering is available."}</p><div className="workspace-nav"><button disabled={busy || index !== "configured" || !filter.trim()} onClick={()=>void searchIndex()}>Search Weaviate</button>{admin && <button disabled={busy || index !== "configured"} onClick={()=>void searchIndex(true)}>Reindex stories</button>}{results && <button onClick={()=>{setResults(null);setFilter("");setSearchNote("");}}>Show all stories</button>}</div>{searchNote && <p role="status">{searchNote}</p>}{error && <p role="alert" className="notice error">{error}</p>}
+      {(results ?? stories.filter(s=>JSON.stringify(s).toLowerCase().includes(filter.toLowerCase()))).map(s=><details className="story-row" key={s.id}><summary><span className="mono">{s.id}</span> {s.title}<span className={`status-tag story-${s.status}`}>{s.status.replaceAll("_"," ")}</span></summary><p>{s.story}</p><ul>{s.acceptance.map(a=><li key={a}>{a}</li>)}</ul><p className="help"><strong>Evidence / remaining work:</strong> {s.evidence}</p></details>)}
       {!stories.length&&<p className="workflow-empty">No user stories have been ingested yet.</p>}
     </div></section>
   </>;
