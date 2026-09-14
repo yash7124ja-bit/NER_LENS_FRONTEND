@@ -46,3 +46,22 @@ no document overflow; the labelled table region remains separately scrollable an
 keyboard-focusable. Local screenshots are in ignored `output/playwright/`.
 
 Updated browser validation passed: the provisioned account signs in through Vite, loads six segments, restores after reload, and signs out to the empty form. JavaScript cannot read the HttpOnly cookie; browser local/session storage remain empty. Desktop 1440x1000 and mobile 390x844 login screenshots were inspected. The development proxy explicitly preserves Host so origin protection remains enabled.
+
+## Cloudflare hosted replay
+
+The owner authorized hosting on 14 September 2026. `worker.js` serves the Vite
+assets and proxies /v1/* and /health/* to the backend configured by BACKEND_ORIGIN.
+Set that binding and PROXY_SECRET using `npx wrangler secret put NAME`; the proxy
+secret must match the Render environment. Never put credentials in VITE variables.
+Deploy with `npm run deploy`. Workers account email verification is required.
+
+The Worker preserves browser Origin and HttpOnly cookies, overwrites trust headers,
+and sends the verified Cloudflare client IP for per-client failure throttling.
+The backend also enforces role/district scope; direct API access requires the proxy
+secret. A ten-minute Cron Trigger checks backend readiness independently of this PC.
+Free-tier quota/expiration limits still apply.
+
+Current attempt: asset upload succeeded, Worker publication was rejected with
+Cloudflare error 10034 (unverified account email). Render also needs access to the
+private backend repository. Hosted end-to-end validation is pending; local tests
+and build passed. The former local-only documentation describes the earlier checkpoint.
