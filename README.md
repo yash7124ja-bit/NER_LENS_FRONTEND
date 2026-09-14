@@ -61,7 +61,10 @@ The backend also enforces role/district scope; direct API access requires the pr
 secret. A ten-minute Cron Trigger checks backend readiness independently of this PC.
 Free-tier quota/expiration limits still apply.
 
-Current attempt: asset upload succeeded, Worker publication was rejected with
-Cloudflare error 10034 (unverified account email). Render also needs access to the
-private backend repository. Hosted end-to-end validation is pending; local tests
-and build passed. The former local-only documentation describes the earlier checkpoint.
+Hosted verification passed on 14 September 2026 at
+https://ner-lens.ner-lens-web.workers.dev, backed by
+https://ner-lens-api.onrender.com and Render Postgres. Login, six-segment loading,
+reload restoration and logout were checked in Chromium. The proxy is configured
+with secret bindings and the ten-minute Cron Trigger is installed. JavaScript
+cannot read the cookie, and browser local/session storage are empty. The backend
+repository's docs/DEPLOYMENT.md records deployment IDs and free-tier limits.
