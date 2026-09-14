@@ -1,3 +1,4 @@
+import ReportMedia from "./ReportMedia";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import i18next from "i18next";
@@ -60,7 +61,7 @@ export default function OfflineReports({ session, segments, authenticated = true
     <label>Safety copy language <select value={locale} onChange={event => setLocale(event.target.value)}><option value="en">English</option><option value="as">Assamese draft — unreviewed</option></select></label>
     <p lang={locale}>{language.t("safety", { lng: locale })}</p>
     {locale === "as" && <p>Assamese draft v1 — not reviewed by a native speaker; use English for operational decisions.</p>}
-    <p>Text-only capture. Enter a known location and its accuracy; this form does not request GPS. Saved reports remain on this browser and may contain sensitive location data.</p>
+    <p>Save the observation first, then attach photos after synchronization. Enter a known location and its accuracy; this form does not request GPS. Saved reports remain on this browser and may contain sensitive location data.</p>
     {!session.user.roles.includes("field_reporter") && <p className="access-note"><strong>Field reporter access required.</strong> This account cannot submit observations. An administrator must assign the field reporter role.</p>}
     {session.user.roles.includes("field_reporter") && <form onSubmit={capture}>
       <label>Road segment<select required {...register("segment_id")}><option value="">Choose segment</option>{segments.map(segment => <option key={segment.segment_id} value={segment.segment_id}>{segmentName(segment)}</option>)}</select></label>
@@ -75,7 +76,7 @@ export default function OfflineReports({ session, segments, authenticated = true
     </form>}
     <button type="button" disabled={!online || busy || !authenticated} onClick={() => void synchronize()}>{busy ? "Synchronizing…" : "Synchronize saved reports"}</button>
     <p role="status">{message}</p>
-    <ul>{rows.map(row => <li key={row.client_report_id}><strong>{row.state.replaceAll("_", " ")}</strong> · {row.observation.note}<br /><small>{row.message} ID: {row.client_report_id}</small></li>)}</ul>
+    <ul>{rows.map(row => <li key={row.client_report_id}><strong>{row.state.replaceAll("_", " ")}</strong> · {row.observation.note}<br /><small>{row.message} ID: {row.client_report_id}</small>{row.canonical_id && authenticated && <ReportMedia reportId={row.canonical_id} owner={owner} upload />}</li>)}</ul>
     {rows.some(row => ["failed", "conflict"].includes(row.state)) && <p>Failed and conflicting reports are preserved. Contact an authorized reviewer with the report ID; capture a new report if a correction is needed.</p>}
   </section>;
 }

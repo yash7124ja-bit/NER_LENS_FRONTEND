@@ -74,6 +74,14 @@ function SourceHealth({ owner }: { owner: string }) {
     </div>
   </Card>;
 }
+function ModelReadiness() {
+  const {data,error}=useQuery({queryKey:["model-readiness"],queryFn:({signal})=>request<Record<string,unknown>>("/v1/models/current",signal),retry:false});
+  return <section id="model-readiness" className="card"><header className="card-hd"><div><h2>Prediction readiness</h2><p>Check model approval before relying on a prediction.</p></div></header><div className="card-bd">
+    {error&&<p role="alert">{error.message}</p>}
+    {!data&&!error&&<p>Loading model card…</p>}
+    {data&&<><p>{data.approved_for_operations ? "Approved for operations" : "No model is approved for operational decisions."}</p><Details value={data}/></>}
+  </div></section>;
+}
 export default function App() {
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
@@ -93,6 +101,10 @@ export default function App() {
     [refresh, setRefresh] = useState(0);
   const [ready, setReady] = useState("Checking service");
 
+  useEffect(() => {
+    const navigate=()=>{const id=window.location.hash.slice(1).split(":")[0]; if(id)document.getElementById(id)?.scrollIntoView({behavior:"smooth"});};
+    window.addEventListener("hashchange",navigate);return()=>window.removeEventListener("hashchange",navigate);
+  },[]);
   const pageRequest = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -432,15 +444,14 @@ export default function App() {
                 <div className="split">
                   <Card
                     title="Geographic overview"
-                    subtitle="Synthetic replay bands · not road navigation"
+                    subtitle="Mappls road route · corridor assessment bands"
                   >
                     <p className="card-bd replay-note">
-                      Hand-authored synthetic geometry, not a surveyed road
-                      graph. No current passability is established. Snapshot
-                      retrieval time records local import, not a live source
-                      observation.
+                      The blue road layer comes from Mappls. Assessment bands define
+                      the reporting area; their road status comes from published authority
+                      decisions. Select a band to inspect evidence or capture a report.
                     </p>
-                    <CorridorMap segments={visible} selectedId={selectedId} onSelect={setSelectedId} />
+                    <CorridorMap corridorId={corridorId} segments={visible} selectedId={selectedId} onSelect={setSelectedId} />
                     <div className="map-footer">
                       <span>
                         <i className="legend-line" /> Synthetic band geometry
@@ -490,14 +501,14 @@ export default function App() {
                                 ", ",
                               ),
                             status_valid_until:
-                              selected.operational_status.valid_until,
+                              selected.operational_status.valid_until ?? "No current authority decision",
                             evidence_age:
                               selected.evidence_age_seconds === null
-                                ? null
+                                ? "No reviewed field observation"
                                 : `${selected.evidence_age_seconds} seconds`,
                             source_health: selected.source_health,
                             prediction_horizon: `${selected.risk.horizon_seconds / 3600} hours`,
-                            probability: selected.risk.probability,
+                            probability: selected.risk.probability ?? "Model has not issued a prediction",
                           }}
                         />
                         <p className="notice">
@@ -580,7 +591,7 @@ export default function App() {
                             "Direction",
                             "Operational status",
                             "Risk outlook",
-                            "Source health",
+                            "Reviewed field evidence",
                           ].map((h) => (
                             <th key={h} scope="col">
                               {h}
@@ -620,9 +631,7 @@ export default function App() {
                               </span>
                             </td>
                             <td>
-                              {s.source_health === "failed"
-                                ? "Unavailable"
-                                : words(s.source_health)}
+                              {s.source_health === "reviewed_evidence" ? "Reviewed evidence received" : "Awaiting field report"}
                             </td>
                           </tr>
                         ))}
@@ -677,7 +686,7 @@ export default function App() {
                 {!draftOnly && corridor && <Workflows key={corridor.corridor_id + session.user.actor_id} session={session} corridor={corridor} segments={segments} onChange={() => setRefresh(r => r + 1)} />}
                 <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>
                 {!draftOnly && corridor && <Administration key={"admin-" + corridor.corridor_id + session.user.actor_id} session={session} corridorId={corridor.corridor_id} />}
-                {!draftOnly && <div id="sources"><SourceHealth owner={session.user.actor_id} /></div>}
+                {!draftOnly && <ModelReadiness />}{!draftOnly && <div id="sources"><SourceHealth owner={session.user.actor_id} /></div>}
               </div>
             )}
           </>

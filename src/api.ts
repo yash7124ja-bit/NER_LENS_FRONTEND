@@ -65,7 +65,7 @@ export class ApiError extends Error {
             : status === 422
               ? "The information is invalid or outside the permitted corridor. Check the location, dates, and required evidence."
               : status === 404
-            ? "No audited corridor data is available. Ask your administrator to run the replay bootstrap, then refresh."
+            ? "The requested record was not found. Refresh the workspace; if it persists, report the action to your administrator."
             : status === 503
               ? "The service is not ready. Check the database and try again."
               : `Request failed (${status}). Please try again.`,

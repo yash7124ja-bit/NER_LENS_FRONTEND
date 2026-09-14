@@ -21,10 +21,12 @@ export class ReportStore extends Dexie {
   reports!: Table<QueuedReport, string>;
   settings!: Table<{ key: string; value: string | number }, string>;
   contexts!: Table<OfflineContext, string>;
+  media!: Table<{key: string; owner: string; reportId: string; slot: number; blob: Blob; sha256: string}, string>;
   constructor(name = "ner-lens-field-reports") {
     super(name);
     this.version(1).stores({ reports: "client_report_id, owner, state", settings: "key" });
     this.version(2).stores({ contexts: "key" });
+    this.version(3).stores({ media: "key, owner, reportId" });
   }
 }
 export const reportStore = new ReportStore();

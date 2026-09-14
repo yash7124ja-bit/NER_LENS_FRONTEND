@@ -2,6 +2,13 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ApiError, request, type Session } from "./api";
 type User = { actor_id: string; email: string; display_name: string; roles: string[]; status_authority: boolean; active: boolean };
 type Story = { id: string; title: string; role: string; story: string; acceptance: string[]; status: string; evidence: string };
+const workflows:Record<string,[string,string]> = {
+  "SIH-01":["#segments","Inspect road conditions"],"SIH-02":["#field-reports","Capture a field report"],
+  "SIH-03":["#operations:reports","Review evidence"],"SIH-04":["#operations:status","Publish a road decision"],
+  "SIH-05":["#operations:routes","Plan a route"],"SIH-06":["#operations:missions","Manage deliveries"],
+  "SIH-07":["#operations:missions","Share mission location"],"SIH-08":["#administration","Manage access"],
+  "SIH-09":["#field-reports","Attach report photos"],"SIH-11":["#model-readiness","Inspect model readiness"]
+};
 const roles = [["regional_viewer","Regional viewer"],["field_reporter","Field reporter"],["reviewer","Evidence reviewer"],["dispatcher","Dispatcher"],["district_officer","District officer"],["system_admin","Super Admin"]];
 function RoleFields({ user }: { user?: User }) { return <><fieldset className="role-options"><legend>Roles in this corridor</legend>{roles.map(([value,label]) => <label key={value}><input type="checkbox" name="roles" value={value} defaultChecked={user ? user.roles.includes(value) : value === "regional_viewer"} />{label}</label>)}</fieldset><label className="consent"><input type="checkbox" name="authority" defaultChecked={user?.status_authority} /> Grant status authority (requires District officer role)</label></>; }
 export default function Administration({ session, corridorId }: { session: Session; corridorId: string }) {
@@ -39,7 +46,7 @@ export default function Administration({ session, corridorId }: { session: Sessi
     <section id="user-stories" className="card"><header className="card-hd"><div><h2>SIH user stories & readiness</h2><p>Persisted acceptance criteria. “Verified in replay” does not mean validated in the field.</p></div></header><div className="card-bd">
       {!admin&&error&&<p role="alert">{error}</p>}<label>Find a user story<input value={filter} onChange={e=>{setFilter(e.target.value);setResults(null);setSearchNote("");}} placeholder="Search role, workflow or acceptance criteria"/></label>
       <p className="help">Source of record: application database · {index === "configured" ? "Weaviate keyword index configured. Semantic embeddings are not enabled." : "Weaviate is not configured; local text filtering is available."}</p><div className="workspace-nav"><button disabled={busy || index !== "configured" || !filter.trim()} onClick={()=>void searchIndex()}>Search Weaviate</button>{admin && <button disabled={busy || index !== "configured"} onClick={()=>void searchIndex(true)}>Reindex stories</button>}{results && <button onClick={()=>{setResults(null);setFilter("");setSearchNote("");}}>Show all stories</button>}</div>{searchNote && <p role="status">{searchNote}</p>}{error && <p role="alert" className="notice error">{error}</p>}
-      {(results ?? stories.filter(s=>JSON.stringify(s).toLowerCase().includes(filter.toLowerCase()))).map(s=><details className="story-row" key={s.id}><summary><span className="mono">{s.id}</span> {s.title}<span className={`status-tag story-${s.status}`}>{s.status.replaceAll("_"," ")}</span></summary><p>{s.story}</p><ul>{s.acceptance.map(a=><li key={a}>{a}</li>)}</ul><p className="help"><strong>Evidence / remaining work:</strong> {s.evidence}</p></details>)}
+      {(results ?? stories.filter(s=>JSON.stringify(s).toLowerCase().includes(filter.toLowerCase()))).map(s=><details className="story-row" key={s.id}><summary><span className="mono">{s.id}</span> {s.title}<span className={`status-tag story-${s.status}`}>{s.status.replaceAll("_"," ")}</span></summary><p>{s.story}</p>{workflows[s.id] && <a className="text-button" href={workflows[s.id][0]} onClick={()=>document.getElementById(workflows[s.id][0].slice(1).split(":")[0])?.scrollIntoView({behavior:"smooth"})}>{workflows[s.id][1]} →</a>}<ul>{s.acceptance.map(a=><li key={a}>{a}</li>)}</ul><p className="help"><strong>Evidence / remaining work:</strong> {s.evidence}</p></details>)}
       {!stories.length&&<p className="workflow-empty">No user stories have been ingested yet.</p>}
     </div></section>
   </>;
