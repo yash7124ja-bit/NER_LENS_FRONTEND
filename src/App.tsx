@@ -49,6 +49,36 @@ function Details({ value }: { value: Record<string, unknown> }) {
     </dl>
   );
 }
+function SourceHealth() {
+  const [data, setData] = useState<{sources: {source: string; status: string; reason: string;
+    retrieved_at: string | null; record_count: number}[]; note: string} | null>(null);
+  const [error, setError] = useState("");
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    setError("");
+    request<NonNullable<typeof data>>("/health/sources", controller.signal)
+      .then(value => { if (!controller.signal.aborted) setData(value); })
+      .catch(() => { if (!controller.signal.aborted) setError("Source checks are unavailable. Try again."); });
+    return () => controller.abort();
+  }, [refresh]);
+  return <Card title="External source access" subtitle="Latest provider retrievals">
+    <div className="card-bd">
+      {error && <p role="alert">{error}</p>}
+      {!data && !error && <p role="status">Loading source checks…</p>}
+      {data && <><p className="help">{data.note}</p><div className="tw"><table>
+        <thead><tr>{["Provider", "Status", "Result", "Records", "Checked"].map(label =>
+          <th key={label} scope="col">{label}</th>)}</tr></thead>
+        <tbody>{data.sources.map(source => <tr key={source.source}>
+          <th scope="row">{words(source.source)}</th><td>{words(source.status)}</td>
+          <td>{words(source.reason)}</td><td>{source.record_count}</td>
+          <td>{source.retrieved_at ? new Date(source.retrieved_at).toLocaleString() : "Not checked"}</td>
+        </tr>)}</tbody>
+      </table></div></>}
+      <button onClick={() => setRefresh(value => value + 1)}>Refresh source checks</button>
+    </div>
+  </Card>;
+}
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [checking, setChecking] = useState(true),
@@ -665,8 +695,8 @@ export default function App() {
                     <div>
                       <h3>Evidence boundary</h3>
                       <p className="help">
-                        Failed source health means no operational feed is
-                        configured for this replay snapshot.
+                        External source retrievals are tracked separately. No
+                        reviewed operational evidence is linked to these replay segments.
                       </p>
                       <ul>
                         {state.limitations.map((item) => (
@@ -676,6 +706,7 @@ export default function App() {
                     </div>
                   </div>
                 </Card>
+                <SourceHealth />
               </div>
             )}
           </>
