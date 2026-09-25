@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandLogo } from './BrandLogo';
 import { Colors, Spacing, Typography } from '../theme';
 import { Radio, RefreshCw, ShieldAlert } from 'lucide-react-native';
@@ -20,15 +21,23 @@ export const HeaderBar: React.FC<Props> = ({
   onSyncPress,
   onSosPress,
 }) => {
+  const insets = useSafeAreaInsets();
+  const topPadding = Math.max(insets.top, StatusBar.currentHeight || 0) + 8;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: topPadding }]}>
       {/* Top Brand Line */}
       <View style={styles.brandRow}>
         <View style={styles.brandInfo}>
-          <BrandLogo size={30} />
+          <BrandLogo size={32} color="#FFFFFF" />
           <View style={styles.brandTextGroup}>
-            <Text style={styles.brandTitle}>NER LENS</Text>
-            <Text style={styles.corridorBadge}>NORTHEAST CORRIDOR LOGISTICS</Text>
+            <View style={styles.brandTitleRow}>
+              <Text style={styles.brandTitle}>NER LENS</Text>
+              <View style={styles.govTag}>
+                <Text style={styles.govTagText}>GOVT OF INDIA</Text>
+              </View>
+            </View>
+            <Text style={styles.corridorBadge}>NORTHEAST CORRIDOR LOGISTICS PORTAL</Text>
           </View>
         </View>
 
@@ -36,7 +45,7 @@ export const HeaderBar: React.FC<Props> = ({
           <TouchableOpacity 
             style={styles.sosQuickBtn} 
             onPress={onSosPress}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             <ShieldAlert size={16} color="#FFFFFF" />
             <Text style={styles.sosQuickText}>SOS</Text>
@@ -48,7 +57,7 @@ export const HeaderBar: React.FC<Props> = ({
       <View style={styles.statusStrip}>
         {/* GPS Telemetry Pill */}
         <View style={styles.chipGps}>
-          <Radio size={12} color={Colors.primary} />
+          <Radio size={12} color="#86EFAC" />
           <Text style={styles.chipGpsText}>GPS LOCKED (NH-29)</Text>
         </View>
 
@@ -58,9 +67,9 @@ export const HeaderBar: React.FC<Props> = ({
           onPress={onSyncPress}
           activeOpacity={0.7}
         >
-          <RefreshCw size={12} color={pendingCount > 0 ? Colors.warning : Colors.primary} />
+          <RefreshCw size={12} color={pendingCount > 0 ? '#FDE68A' : '#93C5FD'} />
           <Text style={[styles.chipSyncText, pendingCount > 0 && styles.chipSyncAmberText]}>
-            {pendingCount > 0 ? `QUEUE: ${pendingCount} SAVED` : (isOnline ? 'LIVE CLOUD LINK' : 'OFFLINE MODE')}
+            {pendingCount > 0 ? `QUEUE: ${pendingCount} SAVED` : (isOnline ? 'CLOUD CONNECTED' : 'OFFLINE MODE')}
           </Text>
         </TouchableOpacity>
 
@@ -69,18 +78,27 @@ export const HeaderBar: React.FC<Props> = ({
           <Text style={styles.chipDriverText} numberOfLines={1}>{driverName}</Text>
         </View>
       </View>
+
+      {/* Tricolor Indicator Line */}
+      <View style={styles.tricolorBar}>
+        <View style={[styles.tricolorStripe, { backgroundColor: '#FF9933' }]} />
+        <View style={[styles.tricolorStripe, { backgroundColor: '#FFFFFF' }]} />
+        <View style={[styles.tricolorStripe, { backgroundColor: '#138808' }]} />
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: Colors.bgBase,
-    paddingTop: Spacing.sm,
+    backgroundColor: Colors.govtNavy,
     paddingBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    borderBottomWidth: 1.5,
-    borderBottomColor: Colors.border,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
   brandRow: {
     flexDirection: 'row',
@@ -96,26 +114,51 @@ const styles = StyleSheet.create({
   brandTextGroup: {
     justifyContent: 'center',
   },
+  brandTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   brandTitle: {
-    color: Colors.textPrimary,
+    color: '#FFFFFF',
     fontSize: Typography.fontSizes.lg,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  govTag: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 3,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  govTagText: {
+    color: '#FFD700',
+    fontSize: 9,
     fontWeight: '800',
-    letterSpacing: 1.2,
+    letterSpacing: 0.5,
   },
   corridorBadge: {
-    color: Colors.primary,
+    color: '#93C5FD',
     fontSize: Typography.fontSizes.xs - 2,
     fontWeight: '700',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
+    marginTop: 1,
   },
   sosQuickBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.danger,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 6,
     gap: 4,
+    shadowColor: Colors.danger,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 3,
   },
   sosQuickText: {
     color: '#FFFFFF',
@@ -128,59 +171,72 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     flexWrap: 'wrap',
+    marginBottom: 8,
   },
   chipGps: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     gap: 5,
   },
   chipGpsText: {
-    color: Colors.primaryBright,
+    color: '#86EFAC',
     fontSize: Typography.fontSizes.xs - 1,
-    fontWeight: '600',
+    fontWeight: '700',
     fontFamily: 'monospace',
   },
   chipSync: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
     gap: 5,
   },
   chipSyncAmber: {
-    borderColor: Colors.warning,
-    backgroundColor: Colors.warningDim,
+    borderColor: '#F59E0B',
+    backgroundColor: 'rgba(245, 158, 11, 0.25)',
   },
   chipSyncText: {
-    color: Colors.textSecondary,
+    color: '#E2E8F0',
     fontSize: Typography.fontSizes.xs - 1,
-    fontWeight: '600',
+    fontWeight: '700',
     fontFamily: 'monospace',
   },
   chipSyncAmberText: {
-    color: Colors.warningBright,
+    color: '#FDE68A',
   },
   chipDriver: {
-    backgroundColor: Colors.bgSurfaceRaised,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
+    borderColor: 'rgba(255, 255, 255, 0.18)',
   },
   chipDriverText: {
-    color: Colors.textMuted,
+    color: '#CBD5E1',
     fontSize: Typography.fontSizes.xs - 1,
-    fontWeight: '500',
-  }
+    fontWeight: '600',
+  },
+  tricolorBar: {
+    flexDirection: 'row',
+    height: 3,
+    borderRadius: 1.5,
+    overflow: 'hidden',
+    marginTop: 2,
+  },
+  tricolorStripe: {
+    flex: 1,
+    height: 3,
+  },
 });
+

@@ -1,43 +1,59 @@
 export const Colors = {
-  // Foundations
-  bgBase: '#0C141F',
-  bgSurface: '#131A26',
-  bgSurfaceRaised: '#1C2433',
-  bgSurfaceHigh: '#232A37',
-  border: '#28354A',
-  borderHighlight: '#3B4A64',
+  // Official Government Foundations (Clean, institutional light portal)
+  bgBase: '#F1F5F9', // Official light slate background
+  bgSurface: '#FFFFFF', // Crisp white cards & containers
+  bgSurfaceRaised: '#F8FAFC', // Soft elevated card background
+  bgSurfaceHigh: '#FFFFFF',
+  
+  // Government Brand Bar & Accents (National Navy & Tricolor)
+  govtNavy: '#0F294A', // Deep National Navy for header bar
+  govtNavyLight: '#1E3A8A', // Secondary header blue
+  tricolorSaffron: '#FF9933',
+  tricolorWhite: '#FFFFFF',
+  tricolorGreen: '#138808',
 
-  // Telemetry & Active State (Neon Teal/Cyan)
-  primary: '#00E5BC',
-  primaryBright: '#42FDD3',
-  primaryDark: '#00614F',
-  primaryDim: 'rgba(0, 229, 188, 0.15)',
+  // Borders & Dividers
+  border: '#CBD5E1', // Crisp slate border
+  borderLight: '#E2E8F0',
+  borderHighlight: '#94A3B8',
 
-  // Environmental Hazards (Safety Amber)
-  warning: '#F59E0B',
-  warningBright: '#FFB95F',
-  warningDark: '#5B3800',
-  warningDim: 'rgba(245, 158, 11, 0.15)',
+  // Primary Operational Action (Bharat Logistics Blue)
+  primary: '#1D4ED8', // Official Royal/Navy Blue
+  primaryBright: '#2563EB',
+  primaryDark: '#1E40AF',
+  primaryDim: 'rgba(29, 78, 216, 0.08)',
+
+  // Environmental Hazards (Safety Amber / Saffron)
+  warning: '#D97706',
+  warningBright: '#F59E0B',
+  warningDark: '#B45309',
+  warningDim: '#FEF3C7',
+  warningBorder: '#FDE68A',
 
   // Emergency & Road Closures (Signal Crimson)
-  danger: '#EF4444',
-  dangerBright: '#FFB4AB',
-  dangerDark: '#690005',
-  dangerDim: 'rgba(239, 68, 68, 0.15)',
+  danger: '#DC2626',
+  dangerBright: '#EF4444',
+  dangerDark: '#991B1B',
+  dangerDim: '#FEE2E2',
+  dangerBorder: '#FCA5A5',
 
-  // Success
-  success: '#10B981',
-  successDim: 'rgba(16, 185, 129, 0.15)',
+  // Success & Compliance (India Forest Green)
+  success: '#15803D',
+  successBright: '#16A34A',
+  successDim: '#DCFCE7',
+  successBorder: '#86EFAC',
 
-  // Typography
-  textPrimary: '#FFFFFF',
-  textSecondary: '#DCE2F4',
-  textMuted: '#94A3B8',
-  textDisabled: '#4B5563',
+  // Typography (High-contrast accessible text)
+  textPrimary: '#0F172A', // Slate 900
+  textSecondary: '#334155', // Slate 700
+  textMuted: '#64748B', // Slate 500
+  textDisabled: '#94A3B8',
+  textInverted: '#FFFFFF', // White text on dark navy/crimson backgrounds
 
   // Overlays
-  overlay: 'rgba(12, 20, 31, 0.85)',
+  overlay: 'rgba(15, 23, 42, 0.65)',
 };
+
 
 export const Spacing = {
   xs: 4,

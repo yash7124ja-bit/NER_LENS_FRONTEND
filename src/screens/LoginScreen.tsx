@@ -56,11 +56,21 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
+        {/* Govt of India Strip */}
+        <View style={styles.govtHeaderBanner}>
+          <View style={styles.tricolorStripe}>
+            <View style={[styles.tricolorBand, { backgroundColor: '#FF9933' }]} />
+            <View style={[styles.tricolorBand, { backgroundColor: '#FFFFFF' }]} />
+            <View style={[styles.tricolorBand, { backgroundColor: '#138808' }]} />
+          </View>
+          <Text style={styles.govtHeaderText}>GOVERNMENT OF INDIA · BHARAT CORRIDOR LOGISTICS</Text>
+        </View>
+
         {/* Brand Header */}
         <View style={styles.header}>
           <BrandLogo size={56} />
           <Text style={styles.title}>NER LENS</Text>
-          <Text style={styles.subtitle}>DRIVER & CORRIDOR CONSOLE</Text>
+          <Text style={styles.subtitle}>DRIVER & FIELD AUDIT PORTAL</Text>
           <Text style={styles.tagline}>{t('appSubtitle')}</Text>
         </View>
 
@@ -168,6 +178,32 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.xxl,
   },
+  govtHeaderBanner: {
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.govtNavy,
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  tricolorStripe: {
+    flexDirection: 'row',
+    height: 3,
+    width: 60,
+    marginBottom: 4,
+    borderRadius: 1.5,
+    overflow: 'hidden',
+  },
+  tricolorBand: {
+    flex: 1,
+    height: '100%',
+  },
+  govtHeaderText: {
+    color: '#E2E8F0',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
   header: {
     alignItems: 'center',
     marginBottom: Spacing.lg,
@@ -259,7 +295,7 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   primaryBtnText: {
-    color: Colors.bgBase,
+    color: '#FFFFFF',
     fontSize: Typography.fontSizes.md,
     fontWeight: '800',
     letterSpacing: 0.5,

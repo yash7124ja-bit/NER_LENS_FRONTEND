@@ -28,9 +28,15 @@ interface Props {
   session: Session;
   onLogout: () => void;
   onOpenSos: () => void;
+  onOpenOutbox?: () => void;
 }
 
-export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOpenSos }) => {
+export const ProfileSettingsScreen: React.FC<Props> = ({ 
+  session, 
+  onLogout, 
+  onOpenSos,
+  onOpenOutbox 
+}) => {
   const [lang, setLang] = useState<LanguageCode>(getLanguage());
   const [serverUrl, setServerUrl] = useState('https://ner-lens.yash7124ja.workers.dev/v1');
 
@@ -72,13 +78,14 @@ export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOp
       <HeaderBar 
         driverName={session.user.display_name}
         onSosPress={onOpenSos}
+        onSyncPress={onOpenOutbox}
       />
 
       <ScrollView contentContainerStyle={styles.scroll}>
         <View style={styles.ribbon}>
           <Text style={styles.title}>DRIVER CONSOLE & SETTINGS</Text>
           <Text style={styles.subtitle}>
-            Vehicle profile, language preferences, and cryptographic cache control.
+            Official logistics identity, vehicle clearance profile, and offline sync control.
           </Text>
         </View>
 
@@ -86,11 +93,11 @@ export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOp
         <View style={styles.card}>
           <View style={styles.profileHeader}>
             <View style={styles.avatar}>
-              <User size={28} color={Colors.primary} />
+              <User size={28} color="#FFFFFF" />
             </View>
             <View style={styles.profileInfo}>
               <Text style={styles.driverName}>{session.user.display_name}</Text>
-              <Text style={styles.driverEmail}>{session.user.email || 'Authenticated Driver'}</Text>
+              <Text style={styles.driverEmail}>{session.user.email || 'Authorized Corridor Operator'}</Text>
               <View style={styles.roleRow}>
                 {session.user.roles.map(r => (
                   <View key={r} style={styles.rolePill}>
@@ -102,6 +109,25 @@ export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOp
           </View>
         </View>
 
+        {/* OFFLINE STORE-AND-FORWARD OUTBOX */}
+        <Text style={styles.sectionHeader}>OFFLINE QUEUE & REPLAY ENGINE</Text>
+        <View style={styles.card}>
+          <View style={styles.specRow}>
+            <Radio size={18} color={Colors.primary} />
+            <Text style={styles.specLabel}>Local Queue Status:</Text>
+            <Text style={[styles.specValue, { color: Colors.success }]}>Online & Armed</Text>
+          </View>
+          {onOpenOutbox && (
+            <TouchableOpacity 
+              style={styles.outboxActionBtn} 
+              onPress={onOpenOutbox}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.outboxActionText}>Inspect Outbox Queue & Sync</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         {/* VEHICLE TELEMETRY PROFILE */}
         <Text style={styles.sectionHeader}>ASSIGNED VEHICLE SPECIFICATIONS</Text>
         <View style={styles.card}>
@@ -111,18 +137,18 @@ export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOp
             <Text style={styles.specValue}>NL-07-EA-3892</Text>
           </View>
           <View style={styles.specRow}>
-            <ShieldCheck size={18} color={Colors.primary} />
+            <ShieldCheck size={18} color={Colors.success} />
             <Text style={styles.specLabel}>Category:</Text>
             <Text style={styles.specValue}>5T Heavy Utility (Cold Chain)</Text>
           </View>
           <View style={styles.specRow}>
-            <Radio size={18} color={Colors.warningBright} />
+            <Radio size={18} color={Colors.warning} />
             <Text style={styles.specLabel}>Clearance Profile:</Text>
             <Text style={styles.specValue}>3.4m Width · 3.8m Height</Text>
           </View>
         </View>
 
-        {/* MULTILINGUAL LANGUAGE SELECTOR (SIH Requirement) */}
+        {/* MULTILINGUAL LANGUAGE SELECTOR */}
         <Text style={styles.sectionHeader}>LANGUAGE / ভাষা (MULTILINGUAL SUPPORT)</Text>
         <View style={styles.card}>
           <TouchableOpacity 
@@ -164,18 +190,19 @@ export const ProfileSettingsScreen: React.FC<Props> = ({ session, onLogout, onOp
 
         {/* DATA PURGE & SIGN OUT */}
         <TouchableOpacity style={styles.purgeBtn} onPress={handleClearCache}>
-          <Trash2 size={16} color={Colors.warningBright} />
+          <Trash2 size={16} color={Colors.warningDark} />
           <Text style={styles.purgeBtnText}>Purge Local Trip Cache</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={onLogout}>
-          <LogOut size={16} color={Colors.dangerBright} />
+          <LogOut size={16} color={Colors.danger} />
           <Text style={styles.logoutBtnText}>{t('signOut')}</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>
   );
 };
+
 
 const styles = StyleSheet.create({
   container: {
@@ -202,12 +229,17 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   card: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: '#FFFFFF',
     borderRadius: TouchTargets.cardRadius,
-    borderWidth: 1.5,
-    borderColor: Colors.border,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
     padding: Spacing.md,
     marginBottom: Spacing.md,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
   },
   profileHeader: {
     flexDirection: 'row',
@@ -218,9 +250,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: Colors.bgSurfaceRaised,
-    borderWidth: 1.5,
-    borderColor: Colors.primary,
+    backgroundColor: Colors.govtNavy,
+    borderWidth: 2,
+    borderColor: '#93C5FD',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -244,23 +276,23 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   rolePill: {
-    backgroundColor: Colors.primaryDim,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 4,
-    borderColor: Colors.primary,
+    borderColor: '#BFDBFE',
     borderWidth: 1,
   },
   roleText: {
-    color: Colors.primaryBright,
+    color: Colors.primary,
     fontSize: Typography.fontSizes.xs - 3,
     fontWeight: '800',
   },
   sectionHeader: {
-    color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs - 1,
+    color: Colors.textSecondary,
+    fontSize: Typography.fontSizes.xs,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6,
     marginBottom: Spacing.xs,
   },
   specRow: {
@@ -280,16 +312,31 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'right',
   },
+  outboxActionBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 12,
+    borderRadius: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 10,
+  },
+  outboxActionText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: Typography.fontSizes.xs,
+    letterSpacing: 0.5,
+  },
   langRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.sm,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    borderBottomColor: '#F1F5F9',
     gap: Spacing.sm,
   },
   langRowSelected: {
-    backgroundColor: 'rgba(0, 229, 188, 0.05)',
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
   },
   langTextGroup: {
     flex: 1,
@@ -313,14 +360,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSizes.xs - 2,
   },
   serverUrl: {
-    color: Colors.primaryBright,
+    color: Colors.primary,
     fontSize: Typography.fontSizes.xs,
     fontFamily: 'monospace',
+    fontWeight: '600',
   },
   purgeBtn: {
-    backgroundColor: Colors.bgSurface,
+    backgroundColor: '#FFFBEB',
     borderWidth: 1,
-    borderColor: Colors.warning,
+    borderColor: '#FCD34D',
     height: TouchTargets.buttonMinHeight,
     borderRadius: TouchTargets.borderRadius,
     flexDirection: 'row',
@@ -330,14 +378,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   purgeBtnText: {
-    color: Colors.warningBright,
+    color: '#B45309',
     fontWeight: '700',
     fontSize: Typography.fontSizes.sm,
   },
   logoutBtn: {
-    backgroundColor: Colors.dangerDim,
+    backgroundColor: '#FEF2F2',
     borderWidth: 1,
-    borderColor: Colors.danger,
+    borderColor: '#FCA5A5',
     height: TouchTargets.buttonMinHeight,
     borderRadius: TouchTargets.borderRadius,
     flexDirection: 'row',
@@ -346,7 +394,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   logoutBtnText: {
-    color: Colors.dangerBright,
+    color: '#DC2626',
     fontWeight: '800',
     fontSize: Typography.fontSizes.sm,
   },

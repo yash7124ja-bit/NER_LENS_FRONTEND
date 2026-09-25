@@ -183,7 +183,7 @@ const styles = StyleSheet.create({
   checkItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.bgBase,
+    backgroundColor: '#F8FAFC',
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: TouchTargets.borderRadius,
@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   },
   checkItemActive: {
     borderColor: Colors.primary,
-    backgroundColor: 'rgba(0, 229, 188, 0.06)',
+    backgroundColor: '#EFF6FF',
   },
   checkTextGroup: {
     flex: 1,
@@ -216,11 +216,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmBtnDisabled: {
-    backgroundColor: Colors.bgSurfaceRaised,
-    opacity: 0.5,
+    backgroundColor: '#CBD5E1',
   },
   confirmBtnText: {
-    color: Colors.bgBase,
+    color: '#FFFFFF',
     fontWeight: '900',
     fontSize: Typography.fontSizes.sm,
   },

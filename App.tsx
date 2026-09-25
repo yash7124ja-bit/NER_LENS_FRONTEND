@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  SafeAreaView, 
   StatusBar, 
   StyleSheet, 
   View, 
   Text, 
   TouchableOpacity, 
-  ActivityIndicator 
+  ActivityIndicator,
+  Platform
 } from 'react-native';
-import { Colors, Spacing, Typography, TouchTargets } from './src/theme';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Colors, Spacing, Typography } from './src/theme';
 import { Session } from './src/types';
 import { getSession, saveSession, getSettings } from './src/services/storage';
 import { setLanguage, t } from './src/services/i18n';
@@ -30,16 +31,16 @@ import {
   Navigation, 
   AlertTriangle, 
   Camera, 
-  FolderSync, 
   User 
 } from 'lucide-react-native';
 
-export default function App() {
+function MainNavigator() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'home' | 'trip' | 'alerts' | 'reports' | 'sync' | 'profile'>('home');
   const [showPreTripModal, setShowPreTripModal] = useState(false);
   const [showSosModal, setShowSosModal] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     (async () => {
@@ -65,25 +66,26 @@ export default function App() {
   if (loading) {
     return (
       <View style={styles.splash}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.bgBase} />
+        <StatusBar barStyle="light-content" backgroundColor={Colors.govtNavy} />
         <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.splashText}>NER LENS DRIVER</Text>
+        <Text style={styles.splashTitle}>NER LENS</Text>
+        <Text style={styles.splashText}>GOVERNMENT OF INDIA · CORRIDOR LOGISTICS</Text>
       </View>
     );
   }
 
   if (!session) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar barStyle="light-content" backgroundColor={Colors.bgBase} />
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, StatusBar.currentHeight || 0) }]}>
+        <StatusBar barStyle="light-content" backgroundColor={Colors.govtNavy} />
         <LoginScreen onLoginSuccess={setSession} />
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.bgBase} />
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={Colors.govtNavy} />
 
       {/* Screen Body */}
       <View style={styles.content}>
@@ -128,69 +130,65 @@ export default function App() {
             session={session}
             onLogout={handleLogout}
             onOpenSos={() => setShowSosModal(true)}
+            onOpenOutbox={() => setActiveTab('sync')}
           />
         )}
       </View>
 
-      {/* Bottom Tactical Navigation HUD */}
-      <View style={styles.bottomNav}>
+      {/* Bottom Government Navigation Bar (5 well-proportioned tabs) */}
+      <View style={[styles.bottomNav, { paddingBottom: Math.max(insets.bottom, 8) }]}>
         <TouchableOpacity 
           style={[styles.navItem, activeTab === 'home' && styles.navItemActive]}
           onPress={() => setActiveTab('home')}
+          activeOpacity={0.7}
         >
-          <Home size={20} color={activeTab === 'home' ? Colors.primary : Colors.textMuted} />
+          <Home size={22} color={activeTab === 'home' ? Colors.primary : Colors.textMuted} />
           <Text style={[styles.navText, activeTab === 'home' && styles.navTextActive]}>
-            {t('tabHome')}
+            Home
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.navItem, activeTab === 'trip' && styles.navItemActive]}
           onPress={() => setActiveTab('trip')}
+          activeOpacity={0.7}
         >
-          <Navigation size={20} color={activeTab === 'trip' ? Colors.primary : Colors.textMuted} />
+          <Navigation size={22} color={activeTab === 'trip' ? Colors.primary : Colors.textMuted} />
           <Text style={[styles.navText, activeTab === 'trip' && styles.navTextActive]}>
-            {t('tabTrip')}
+            Route
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.navItem, activeTab === 'alerts' && styles.navItemActive]}
           onPress={() => setActiveTab('alerts')}
+          activeOpacity={0.7}
         >
-          <AlertTriangle size={20} color={activeTab === 'alerts' ? Colors.warningBright : Colors.textMuted} />
+          <AlertTriangle size={22} color={activeTab === 'alerts' ? Colors.warning : Colors.textMuted} />
           <Text style={[styles.navText, activeTab === 'alerts' && styles.navTextActive]}>
-            {t('tabAlerts')}
+            Alerts
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
           style={[styles.navItem, activeTab === 'reports' && styles.navItemActive]}
           onPress={() => setActiveTab('reports')}
+          activeOpacity={0.7}
         >
-          <Camera size={20} color={activeTab === 'reports' ? Colors.primary : Colors.textMuted} />
+          <Camera size={22} color={activeTab === 'reports' ? Colors.primary : Colors.textMuted} />
           <Text style={[styles.navText, activeTab === 'reports' && styles.navTextActive]}>
-            {t('tabReports')}
+            Report
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity 
-          style={[styles.navItem, activeTab === 'sync' && styles.navItemActive]}
-          onPress={() => setActiveTab('sync')}
-        >
-          <FolderSync size={20} color={activeTab === 'sync' ? Colors.primary : Colors.textMuted} />
-          <Text style={[styles.navText, activeTab === 'sync' && styles.navTextActive]}>
-            Outbox
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.navItem, activeTab === 'profile' && styles.navItemActive]}
+          style={[styles.navItem, (activeTab === 'profile' || activeTab === 'sync') && styles.navItemActive]}
           onPress={() => setActiveTab('profile')}
+          activeOpacity={0.7}
         >
-          <User size={20} color={activeTab === 'profile' ? Colors.primary : Colors.textMuted} />
-          <Text style={[styles.navText, activeTab === 'profile' && styles.navTextActive]}>
-            {t('tabSettings')}
+          <User size={22} color={(activeTab === 'profile' || activeTab === 'sync') ? Colors.primary : Colors.textMuted} />
+          <Text style={[styles.navText, (activeTab === 'profile' || activeTab === 'sync') && styles.navTextActive]}>
+            Profile
           </Text>
         </TouchableOpacity>
       </View>
@@ -208,58 +206,78 @@ export default function App() {
         visible={showSosModal}
         onClose={() => setShowSosModal(false)}
       />
-    </SafeAreaView>
+    </View>
+  );
+}
+
+export default function App() {
+  return (
+    <SafeAreaProvider>
+      <MainNavigator />
+    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  container: {
     flex: 1,
     backgroundColor: Colors.bgBase,
   },
   splash: {
     flex: 1,
-    backgroundColor: Colors.bgBase,
+    backgroundColor: Colors.govtNavy,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  splashText: {
-    color: Colors.textPrimary,
+  splashTitle: {
+    color: '#FFFFFF',
     fontWeight: '900',
-    fontSize: Typography.fontSizes.lg,
+    fontSize: Typography.fontSizes.xl,
     letterSpacing: 2,
     marginTop: Spacing.md,
+  },
+  splashText: {
+    color: '#93C5FD',
+    fontWeight: '700',
+    fontSize: Typography.fontSizes.xs,
+    letterSpacing: 1,
+    marginTop: 6,
   },
   content: {
     flex: 1,
   },
   bottomNav: {
     flexDirection: 'row',
-    backgroundColor: Colors.bgSurface,
-    borderTopWidth: 1.5,
-    borderTopColor: Colors.border,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
     paddingTop: 8,
-    paddingBottom: 8,
     justifyContent: 'space-around',
     alignItems: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 8,
   },
   navItem: {
+    flex: 1,
     alignItems: 'center',
     paddingVertical: 4,
-    paddingHorizontal: 8,
     borderRadius: 6,
   },
   navItemActive: {
-    backgroundColor: 'rgba(0, 229, 188, 0.08)',
+    backgroundColor: 'rgba(29, 78, 216, 0.08)',
   },
   navText: {
     color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs - 2,
+    fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
   },
   navTextActive: {
-    color: Colors.primaryBright,
+    color: Colors.primary,
     fontWeight: '800',
   },
 });
+

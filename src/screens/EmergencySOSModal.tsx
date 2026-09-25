@@ -258,7 +258,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.fontSizes.xs - 2,
   },
   dialText: {
-    color: Colors.primaryBright,
+    color: Colors.primary,
     fontWeight: '800',
     fontSize: Typography.fontSizes.xs,
   },
