@@ -26,18 +26,27 @@ export type CachedRouteAlert = {
   pending_decision?: "accept" | "decline"; idempotency_key?: string;
   sync_state?: "saved_on_device" | "retry_pending" | "reauth_required" | "conflict";
 };
+export type DriverAction = "accept" | "reject" | "start" | "declare-delivery";
+export type CachedDriverMission = {
+  key: string; owner: string; mission_id: string; corridor_id: string; state: string;
+  cargo_class: string; priority: string; delivery_window_end: string;
+  receiving_facility: string | null; vehicle_id: string | null; saved_at: string;
+  pending: { action: DriverAction; idempotency_key: string; state: "saved_on_device" | "retry_pending" | "reauth_required" | "conflict" }[];
+};
 export class ReportStore extends Dexie {
   reports!: Table<QueuedReport, string>;
   settings!: Table<{ key: string; value: string | number }, string>;
   contexts!: Table<OfflineContext, string>;
   media!: Table<QueuedPhoto, string>;
   alerts!: Table<CachedRouteAlert, string>;
+  missions!: Table<CachedDriverMission, string>;
   constructor(name = "ner-lens-field-reports") {
     super(name);
     this.version(1).stores({ reports: "client_report_id, owner, state", settings: "key" });
     this.version(2).stores({ contexts: "key" });
     this.version(3).stores({ media: "key, owner, reportId" });
     this.version(4).stores({ alerts: "alert_id, owner, mission_id" });
+    this.version(5).stores({ missions: "key, owner, corridor_id" });
   }
 }
 export const reportStore = new ReportStore();

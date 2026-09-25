@@ -3,9 +3,64 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ReportStore, savePhoto, saveReport, syncPhotos, syncReports, observationSchema, saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline.ts";
 import { cacheRouteAlerts, cachedRouteAlerts, queueRouteAlertDecision, syncRouteAlertDecisions } from "./alertQueue.ts";
+import { cacheDriverMissions, cachedDriverMissions, queueDriverAction, syncDriverActions } from "./driverQueue.ts";
 import type { Session, Catalog, State } from "./api.ts";
 const observation = { segment_id: "authorized-segment", observed_at: "2026-09-01T00:00:00Z", geometry: { type: "Point" as const, coordinates: [92, 26] as [number, number] }, accuracy_m: 10, status_claim: "unknown" as const, condition_code: "obstruction", note: "Observed obstruction requiring review" };
 const acknowledgement = (body: { client_report_id: string }) => Response.json({ client_report_id: body.client_report_id, field_report_id: `server-${body.client_report_id}`, sync_state: "accepted_for_review" });
+test("driver mission actions survive restart and replay in order with the same idempotency keys", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const snapshot = { mission_id: "mission-1", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], db);
+  await assert.rejects(queueDriverAction("bob", "mission-1", "accept", db));
+  await queueDriverAction("alice", "mission-1", "accept", db);
+  await queueDriverAction("alice", "mission-1", "start", db);
+  await queueDriverAction("alice", "mission-1", "declare-delivery", db);
+  const keys = (await cachedDriverMissions("alice", "corridor-1", db))[0].pending.map(item => item.idempotency_key);
+  db.close();
+  db = new ReportStore(name);
+  assert.deepEqual((await cachedDriverMissions("alice", "corridor-1", db))[0].pending.map(item => item.idempotency_key), keys);
+  assert.deepEqual(await cachedDriverMissions("bob", "corridor-1", db), []);
+  const seen: string[] = [];
+  let loseResponse = true;
+  const send: typeof fetch = async (url, init) => {
+    const action = String(url).split("/").at(-1)!;
+    seen.push(`${action}:${new Headers(init?.headers).get("Idempotency-Key")}`);
+    if (loseResponse) { loseResponse = false; throw Error("response lost after server commit"); }
+    return Response.json({ mission_id: "mission-1", state: { accept: "accepted", start: "active", "declare-delivery": "delivered" }[action], request_id: crypto.randomUUID() });
+  };
+  await syncDriverActions("alice", "corridor-1", db, send);
+  assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].pending[0].state, "retry_pending");
+  await syncDriverActions("alice", "corridor-1", db, send);
+  const saved = (await cachedDriverMissions("alice", "corridor-1", db))[0];
+  assert.equal(saved.state, "delivered");
+  assert.equal(saved.pending.length, 0);
+  assert.deepEqual(seen, [`accept:${keys[0]}`, `accept:${keys[0]}`, `start:${keys[1]}`, `declare-delivery:${keys[2]}`]);
+  await db.delete();
+});
+
+test("driver action conflicts stop later queued actions and expired trips cannot start", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const snapshot = { mission_id: "mission-2", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: null, vehicle_id: null };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], db);
+  await queueDriverAction("alice", "mission-2", "accept", db);
+  await queueDriverAction("alice", "mission-2", "start", db);
+  let calls = 0;
+  await syncDriverActions("alice", "corridor-1", db, async () => { calls++; return new Response(null, { status: 409 }); });
+  assert.equal(calls, 1);
+  assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].pending[0].state, "conflict");
+  await assert.rejects(queueDriverAction("alice", "mission-2", "declare-delivery", db));
+  await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, mission_id: "mission-3", state: "accepted",
+    delivery_window: { end: new Date(Date.now() - 1000).toISOString() } }], db);
+  await assert.rejects(queueDriverAction("alice", "mission-3", "start", db), /delivery window/);
+  await db.delete();
+});
 test("route alert decision survives restart, stays with its owner, and retries the same key", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);
