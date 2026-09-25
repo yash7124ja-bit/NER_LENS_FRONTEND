@@ -3,6 +3,7 @@ import Workflows from "./Workflows";
 import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
 import CorridorMap from "./CorridorMap";
+import { ArrowClockwise, ArrowRight, ArrowUpRight, MapTrifold } from "@phosphor-icons/react";
 import { permittedWorkspaces, workspaceFromPath, workspaces } from "./workspace";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline";
@@ -301,6 +302,7 @@ export default function App() {
         .includes(query.toLowerCase()),
   );
   const selected = segments.find((s) => s.segment_id === selectedId);
+  const attention = segments.filter(s => s.operational_status.value !== "open" || s.risk.state === "insufficient_evidence");
   return (
     <>
       <a className="skip" href="#main">
@@ -317,9 +319,9 @@ export default function App() {
             <span>{workspaces[workspace].name}</span>
           </div>
           <div className="tools">
-            <span className="stamp">{ready}</span>
+            <span className="environment-label">{ready}</span>
             <button onClick={() => setRefresh((v) => v + 1)} disabled={busy || draftOnly || !connected}>
-              Refresh
+              <ArrowClockwise size={14} /> Refresh
             </button>
             {session && (
               <>
@@ -334,6 +336,7 @@ export default function App() {
             )}
           </div>
         </div>
+        {session && authorized && <nav className="topbar-nav" aria-label="Applications">{availableWorkspaces.map(id => <a key={id} href={`/${id}/`} aria-current={workspace === id ? "page" : undefined}>{workspaces[id].name}</a>)}</nav>}
       </header>
       {checking || (session && !requestedWorkspace && availableWorkspaces.length > 0) ? (
         <main id="main" className="session-check" role="status">
@@ -379,7 +382,6 @@ export default function App() {
             </span>
           </div>
           <div className="workspace-status"><strong>SIH MVP · Replay workspace</strong><p>{workspace === "field" ? "Save observations on this device, then synchronize after signing in. The corridor geometry is synthetic and does not establish road safety." : "Provider connection status is shown below. The corridor geometry is synthetic, and route safety and prediction accuracy are not validated. Your account permissions determine which operations you can perform."}</p></div>
-          <nav className="workspace-nav" aria-label="Applications">{availableWorkspaces.map(id => <a key={id} href={`/${id}/`} aria-current={workspace === id ? "page" : undefined}>NER LENS {workspaces[id].name}</a>)}</nav>
           <nav className="workspace-nav" aria-label="Workspace sections">
             {!adminOnly && <a href="#segments">Corridor conditions</a>}
             {workspace === "control" && <><a href="#operations:missions">Deliveries</a><a href="#operations:routes">Route planning</a><a href="#sources">Source connections</a></>}
@@ -433,6 +435,36 @@ export default function App() {
             {workspace === "field" && state && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
             {state && (
               <div className="rows">
+                <section className="brief-band" aria-label="Corridor brief">
+                  <span className="brief-symbol"><MapTrifold size={20} weight="duotone" /></span>
+                  <div>
+                    <p className="eyebrow">CORRIDOR BRIEF · {state.data_mode} snapshot</p>
+                    <p><strong>{segments.length} segments loaded. {segments.filter(s => s.operational_status.value === "unknown").length} have unknown operational status.</strong> Review the map and published decisions before dispatch. Unknown does not mean passable.</p>
+                  </div>
+                  {workspace === "control" && <a href="#operations:routes" className="brief-action">Plan a route <ArrowUpRight size={15} /></a>}
+                </section>
+                <ul className="context-strip" aria-label="Corridor context">
+                  <li><b>{corridor?.name ?? "Selected corridor"}</b></li>
+                  <li><b>{segments.length}</b> loaded bands</li>
+                  <li><b>{segments.filter(s => s.source_health === "reviewed_evidence").length}</b> with reviewed evidence</li>
+                  <li>Snapshot {new Date(state.as_of).toLocaleString()}</li>
+                </ul>
+                <div className="split command-grid">
+                  <Card title="Geographic overview" subtitle="Mappls road route · corridor assessment bands">
+                    <p className="card-bd replay-note">The blue road layer comes from Mappls. Assessment bands define the reporting area; their road status comes from published authority decisions. Select a band to inspect evidence or capture a report.</p>
+                    <CorridorMap corridorId={corridorId} segments={visible} selectedId={selectedId} onSelect={setSelectedId} />
+                    <div className="map-footer"><span><i className="legend-line" /> Synthetic band geometry</span><span><i className="legend-line selected" /> Selected band</span><a href="#segments">Explore in table ↓</a></div>
+                  </Card>
+                  <section className="card attention-panel" aria-label="Decision queue">
+                    <header className="card-hd"><div><p className="eyebrow">DECISION QUEUE</p><h2>Requires attention <span className="queue-count">{attention.length}</span></h2><p>Loaded bands needing a status or evidence check</p></div><a href="#segments" aria-label="View all operational segments"><ArrowUpRight size={17} /></a></header>
+                    <div className="priority-feed">{!attention.length && <p className="card-bd">No loaded bands currently need a status or evidence check.</p>}{attention.slice(0, 5).map(s => <article key={s.segment_id}>
+                      <div className="priority-top"><span className={`pill road-${s.operational_status.value}`}>{words(s.operational_status.value)}</span><span className="mono">{s.source_health === "reviewed_evidence" ? "Reviewed evidence" : "Evidence pending"}</span></div>
+                      <button className="priority-title" onClick={() => {setSelectedId(s.segment_id); document.getElementById("segment-detail")?.scrollIntoView({behavior:"smooth"});}}>{segmentName(s)} <ArrowUpRight size={14} /></button>
+                      <p>{s.operational_status.value === "unknown" ? "Passability has not been established." : `Published status: ${words(s.operational_status.value)}.`} {s.risk.state === "insufficient_evidence" ? "Prediction abstained." : ""}</p>
+                    </article>)}</div>
+                    <a className="queue-footer" href="#segments">View all segments <ArrowRight size={14} /></a>
+                  </section>
+                </div>
                 <section className="kpis" aria-label="Loaded corridor summary">
                   {[
                     [
@@ -470,27 +502,7 @@ export default function App() {
                     </article>
                   ))}
                 </section>
-                <div className="split">
-                  <Card
-                    title="Geographic overview"
-                    subtitle="Mappls road route · corridor assessment bands"
-                  >
-                    <p className="card-bd replay-note">
-                      The blue road layer comes from Mappls. Assessment bands define
-                      the reporting area; their road status comes from published authority
-                      decisions. Select a band to inspect evidence or capture a report.
-                    </p>
-                    <CorridorMap corridorId={corridorId} segments={visible} selectedId={selectedId} onSelect={setSelectedId} />
-                    <div className="map-footer">
-                      <span>
-                        <i className="legend-line" /> Synthetic band geometry
-                      </span>
-                      <span>
-                        <i className="legend-line selected" /> Selected band (thicker line)
-                      </span>
-                      <a href="#segments">Explore in table ↓</a>
-                    </div>
-                  </Card>
+                <section id="segment-detail">
                   <Card
                     title="Segment detail"
                     subtitle={
@@ -558,7 +570,7 @@ export default function App() {
                       </p>
                     )}
                   </Card>
-                </div>
+                </section>
                 <section className="card" id="segments">
                   <header className="card-hd">
                     <div>
