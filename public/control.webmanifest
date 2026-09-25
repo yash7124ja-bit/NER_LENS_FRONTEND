@@ -1,0 +1,1 @@
+{"id":"/control/","name":"NER LENS Control","short_name":"Control","description":"Delivery and corridor control","start_url":"/control/","scope":"/control/","display":"standalone","background_color":"#f7f7f5","theme_color":"#252e2b","icons":[{"src":"/control-icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}]}

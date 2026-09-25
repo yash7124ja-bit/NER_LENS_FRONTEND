@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Enterprise logistics control dashboard — 248,631 shipments across five regions, with exceptions, AI risk insights and fleet utilisation.">
+<style>
+  html{color-scheme:light}
+  body{margin:0;font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;background:#F7F7F5}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<title>Network Control</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --canvas:#F7F7F5;
+  --surface:#FFFFFF;
+  --border:#E7E7E4;
+  --border-strong:#DBDBD6;
+  --ink:#20201E;
+  --muted:#73736E;
+  --faint:#9A9A94;
+  --wash:#F2F2EF;
+
+  --good:#14A05A;      --good-ink:#0E6B3D;  --good-bg:#EAF6EF;
+  --warn:#E0930F;      --warn-ink:#8A5A00;  --warn-bg:#FBF2E1;
+  --crit:#D0413A;      --crit-ink:#A32A22;  --crit-bg:#FAEDEB;
+  --info:#2A78D6;      --info-ink:#1B5AAC;  --info-bg:#EAF1FC;
+  --ai:#6B5BD6;        --ai-ink:#4F41B0;    --ai-bg:#F0EEFC;
+
+  --sans:"Instrument Sans",-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --r:10px;
+}
+*{box-sizing:border-box}
+body{
+  background:var(--canvas);
+  color:var(--ink);
+  font-family:var(--sans);
+  font-size:13px;
+  line-height:1.45;
+  -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,p,ul,ol,figure{margin:0}
+ul{list-style:none;padding:0}
+:focus-visible{outline:2px solid var(--info);outline-offset:2px;border-radius:4px}
+
+.shell{max-width:1400px;margin:0 auto;padding:0 28px 64px}
+
+/* ── toolbar ─────────────────────────────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:20;
+  background:rgba(247,247,245,.92);
+  backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--border);
+}
+.topbar-in{
+  max-width:1400px;margin:0 auto;padding:14px 28px;
+  display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{font-size:15px;font-weight:600;letter-spacing:-.01em}
+.brand span{font-size:12.5px;color:var(--muted)}
+.brand .sep{color:var(--border-strong);font-size:12px}
+
+.tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:6px;
+  height:28px;padding:0 9px;
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:7px;
+  font:inherit;font-size:12.5px;font-weight:500;color:var(--ink);
+  cursor:pointer;white-space:nowrap;
+  transition:background .12s,border-color .12s;
+}
+.btn:hover{background:var(--wash);border-color:var(--border-strong)}
+.btn .cv{color:var(--faint)}
+.btn.icon{padding:0;width:28px;justify-content:center}
+.btn.ai{color:var(--ai-ink)}
+.btn.ai svg{color:var(--ai)}
+.btn-div{width:1px;height:18px;background:var(--border);margin:0 4px}
+.stamp{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap}
+svg{display:block}
+
+/* ── infrastructure context strip ────────────────────── */
+.context{
+  display:flex;flex-wrap:wrap;align-items:center;gap:0 18px;
+  padding:13px 2px 0;font-size:12.5px;color:var(--muted);
+}
+.context b{font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums}
+.context li{display:flex;gap:5px;align-items:baseline}
+.context li+li::before{content:"";width:3px;height:3px;border-radius:50%;background:var(--border-strong);margin-right:13px;align-self:center}
+
+/* ── grid + cards ────────────────────────────────────── */
+.rows{display:flex;flex-direction:column;gap:16px;margin-top:16px}
+.split{display:grid;gap:16px}
+.split.ops{grid-template-columns:minmax(0,1.85fr) minmax(0,1fr)}
+.split.perf{grid-template-columns:minmax(0,1.85fr) minmax(0,1fr)}
+
+.card{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:var(--r);
+  min-width:0;
+}
+.card-hd{
+  display:flex;align-items:flex-start;gap:16px;
+  padding:15px 18px;border-bottom:1px solid var(--border);
+}
+.card-hd .t{font-size:13.5px;font-weight:600;letter-spacing:-.005em}
+.card-hd .s{font-size:12px;color:var(--muted);margin-top:2px}
+.card-hd .right{margin-left:auto;display:flex;align-items:center;gap:6px}
+.card-bd{padding:18px}
+
+/* ── KPI strip ───────────────────────────────────────── */
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:17px 18px 16px}
+.kpi .lab{font-size:12px;color:var(--muted);font-weight:500}
+.kpi .val{
+  font-size:33px;line-height:1.1;font-weight:600;letter-spacing:-.028em;
+  margin:9px 0 8px;font-variant-numeric:tabular-nums;
+}
+.kpi .foot{display:flex;align-items:baseline;gap:7px;font-size:12px;flex-wrap:wrap}
+.kpi .foot .note{color:var(--muted)}
+.delta{display:inline-flex;align-items:center;gap:3px;font-weight:600;font-variant-numeric:tabular-nums}
+.delta.up{color:var(--good-ink)}
+.share{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ── chart ───────────────────────────────────────────── */
+.seg{display:inline-flex;background:var(--wash);border:1px solid var(--border);border-radius:7px;padding:2px;gap:2px}
+.seg button{
+  height:22px;padding:0 9px;border:0;border-radius:5px;background:transparent;
+  font:inherit;font-size:11.5px;font-weight:600;color:var(--muted);cursor:pointer;
+  font-family:var(--mono);letter-spacing:.01em;
+}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(32,32,30,.07)}
+.chart-lead{display:flex;align-items:baseline;gap:10px;padding:0 0 4px}
+.chart-lead .n{font-size:26px;font-weight:600;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+.chart-lead .u{font-size:12.5px;color:var(--muted)}
+.plot{position:relative;margin-top:6px}
+.plot svg{width:100%;height:auto;overflow:visible}
+.gl{stroke:var(--border);stroke-width:1}
+.ax{stroke:var(--border-strong);stroke-width:1}
+.tick{font-family:var(--mono);font-size:10px;fill:var(--faint)}
+.tip{
+  position:absolute;pointer-events:none;opacity:0;transform:translate(-50%,-100%);
+  background:var(--surface);border:1px solid var(--border);border-radius:7px;
+  box-shadow:0 6px 18px rgba(32,32,30,.10),0 1px 3px rgba(32,32,30,.06);
+  padding:7px 10px;white-space:nowrap;transition:opacity .1s;z-index:5;
+}
+.tip .d{font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+.tip .v{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:1px}
+.chart-note{margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)}
+
+/* ── network status ──────────────────────────────────── */
+.stackbar{display:flex;gap:2px;height:8px;margin-bottom:16px}
+.stackbar i{border-radius:2px;min-width:5px}
+.statlist li{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)}
+.statlist li:last-child{border-bottom:0;padding-bottom:0}
+.statlist .dot{width:7px;height:7px;border-radius:2px;flex:none}
+.statlist .nm{font-size:12.5px}
+.statlist .n{margin-left:auto;font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.statlist .pc{width:46px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.subnote{
+  margin-top:14px;padding:10px 12px;background:var(--crit-bg);border-radius:7px;
+  font-size:11.5px;color:var(--crit-ink);display:flex;gap:8px;align-items:flex-start;
+}
+.subnote b{font-weight:600;font-variant-numeric:tabular-nums}
+
+/* ── AI band ─────────────────────────────────────────── */
+.ai-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+.ai-cell{padding:18px}
+.ai-cell+.ai-cell{border-left:1px solid var(--border)}
+.ai-eyebrow{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:10.5px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--ai-ink);margin-bottom:11px;
+}
+.ai-eyebrow svg{color:var(--ai)}
+.ai-cell h3{font-size:14.5px;font-weight:600;letter-spacing:-.01em;line-height:1.35;text-wrap:balance}
+.ai-cell p{font-size:12.5px;color:var(--muted);margin-top:6px;max-width:56ch}
+.ai-metrics{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.chip{background:var(--ai-bg);border-radius:7px;padding:8px 11px}
+.chip .k{font-size:10.5px;color:var(--ai-ink);font-weight:500;opacity:.85}
+.chip .v{font-size:15px;font-weight:600;color:var(--ai-ink);font-variant-numeric:tabular-nums;margin-top:1px}
+.ai-link{
+  display:inline-flex;align-items:center;gap:5px;margin-top:14px;
+  background:none;border:0;padding:0;cursor:pointer;
+  font:inherit;font-size:12.5px;font-weight:600;color:var(--ai-ink);
+}
+.ai-link:hover{text-decoration:underline;text-underline-offset:3px}
+
+/* ── tables ──────────────────────────────────────────── */
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th{
+  font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);text-align:left;padding:0 18px 9px;white-space:nowrap;
+}
+thead tr{border-bottom:1px solid var(--border)}
+td{padding:11px 18px;font-size:12.5px;border-bottom:1px solid var(--border);white-space:nowrap}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--wash)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.id{font-family:var(--mono);font-size:12px;font-weight:500}
+.route{color:var(--ink)}
+.route .arw{color:var(--faint);margin:0 5px}
+.eta{font-family:var(--mono);font-size:12px;font-weight:500}
+.eta.hi{color:var(--crit-ink)}
+.thead-pad thead th:first-child,.thead-pad tbody td:first-child{padding-left:18px}
+
+.pill{
+  display:inline-flex;align-items:center;gap:5px;
+  height:20px;padding:0 8px;border-radius:5px;
+  font-size:11px;font-weight:600;white-space:nowrap;
+}
+.pill i{width:5px;height:5px;border-radius:50%;flex:none}
+.pill.risk{background:var(--warn-bg);color:var(--warn-ink)}
+.pill.risk i{background:var(--warn)}
+.pill.delayed{background:var(--crit-bg);color:var(--crit-ink)}
+.pill.delayed i{background:var(--crit)}
+.pill.blocked{background:#EFEDEA;color:#4A4A44}
+.pill.blocked i{background:#6E6E66}
+.pill.good{background:var(--good-bg);color:var(--good-ink)}
+.pill.good i{background:var(--good)}
+
+/* on-time micro-bar inside regional table */
+.otcell{display:flex;align-items:center;gap:9px;justify-content:flex-end}
+.otdot{width:6px;height:6px;border-radius:50%;flex:none}
+.otval{width:44px;text-align:right;font-weight:600}
+
+/* ── fleet ───────────────────────────────────────────── */
+.fleet-hero{display:flex;align-items:baseline;gap:9px;padding-bottom:16px;margin-bottom:4px;border-bottom:1px solid var(--border)}
+.fleet-hero .n{font-size:30px;font-weight:600;letter-spacing:-.028em;font-variant-numeric:tabular-nums}
+.fleet-hero .l{font-size:12px;color:var(--muted)}
+.fleet li{padding:11px 0;border-bottom:1px solid var(--border)}
+.fleet li:last-child{border-bottom:0;padding-bottom:0}
+.fleet .row{display:flex;align-items:baseline;gap:10px;margin-bottom:7px}
+.fleet .nm{font-size:12.5px}
+.fleet .n{margin-left:auto;font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.fleet .cap{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.bar{height:4px;border-radius:2px;background:var(--wash);overflow:hidden}
+.bar i{display:block;height:100%;border-radius:2px;background:#45453F}
+
+/* ── activity ────────────────────────────────────────── */
+.feed li{display:flex;align-items:baseline;gap:14px;padding:11px 18px;border-bottom:1px solid var(--border)}
+.feed li:last-child{border-bottom:0}
+.feed li:hover{background:var(--wash)}
+.feed .tm{font-family:var(--mono);font-size:11.5px;color:var(--faint);width:44px;flex:none}
+.feed .mk{width:6px;height:6px;border-radius:50%;flex:none;transform:translateY(-1px)}
+.feed .tx{font-size:12.5px;min-width:0}
+.feed .tx b{font-weight:600}
+.feed .tx .m{font-family:var(--mono);font-size:12px;font-weight:500}
+.feed .src{margin-left:auto;font-size:11px;color:var(--faint);white-space:nowrap}
+
+@media (max-width:1120px){
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .split.ops,.split.perf,.ai-grid{grid-template-columns:minmax(0,1fr)}
+  .ai-cell+.ai-cell{border-left:0;border-top:1px solid var(--border)}
+}
+@media (max-width:640px){
+  .shell,.topbar-in{padding-left:16px;padding-right:16px}
+  .kpis{grid-template-columns:minmax(0,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <h1>Logistics</h1>
+      <span class="sep">/</span>
+      <span>Network overview</span>
+    </div>
+    <div class="tools">
+      <button class="btn" type="button">Last 30 days <svg class="cv" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4L5 6.5 7.5 4"/></svg></button>
+      <button class="btn" type="button">All regions <svg class="cv" width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M2.5 4L5 6.5 7.5 4"/></svg></button>
+      <button class="btn" type="button">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M1.5 3h11M3.5 7h7M5.5 11h3"/></svg>
+        Filter
+      </button>
+      <span class="btn-div"></span>
+      <button class="btn ai" type="button">
+        <svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor"><path d="M7 0.8l1.25 3.7 3.7 1.25-3.7 1.25L7 10.7 5.75 7 2.05 5.75 5.75 4.5 7 .8zM11.6 9.2l.55 1.6 1.6.55-1.6.55-.55 1.6-.55-1.6-1.6-.55 1.6-.55.55-1.6z"/></svg>
+        AI Insights
+      </button>
+      <button class="btn icon" type="button" aria-label="More actions">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor"><circle cx="3" cy="7" r="1.15"/><circle cx="7" cy="7" r="1.15"/><circle cx="11" cy="7" r="1.15"/></svg>
+      </button>
+      <span class="btn-div"></span>
+      <span class="stamp">Sep 10, 2026 · 09:18 IST</span>
+      <button class="btn icon" type="button" aria-label="Refresh network data">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M12 7a5 5 0 1 1-1.6-3.67"/><path d="M12.4 1.4v2.6H9.8"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+
+  <ul class="context">
+    <li><b>4,821</b> active vehicles</li>
+    <li><b>182</b> hubs</li>
+    <li><b>47</b> distribution centres</li>
+    <li><b>1,284</b> active routes</li>
+    <li><b>38</b> carrier partners</li>
+  </ul>
+
+  <div class="rows">
+
+    <!-- KPI STRIP -->
+    <section class="kpis" aria-label="Network key figures">
+      <article class="kpi">
+        <div class="lab">Shipments processed</div>
+        <div class="val">248,631</div>
+        <div class="foot">
+          <span class="delta up"><svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1.5l3.2 4.2H1.8z"/></svg>12.8%</span>
+          <span class="note">vs previous period</span>
+        </div>
+      </article>
+      <article class="kpi">
+        <div class="lab">Currently moving</div>
+        <div class="val">91,482</div>
+        <div class="foot">
+          <span class="share">36.8%</span>
+          <span class="note">of the network, in transit</span>
+        </div>
+      </article>
+      <article class="kpi">
+        <div class="lab">Delivery performance</div>
+        <div class="val">96.4%</div>
+        <div class="foot">
+          <span class="delta up"><svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1.5l3.2 4.2H1.8z"/></svg>1.8 pts</span>
+          <span class="note">on time, vs previous period</span>
+        </div>
+      </article>
+      <article class="kpi">
+        <div class="lab">Active freight value</div>
+        <div class="val">$184.7M</div>
+        <div class="foot">
+          <span class="delta up"><svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1.5l3.2 4.2H1.8z"/></svg>14.2%</span>
+          <span class="note">vs previous period</span>
+        </div>
+      </article>
+    </section>
+
+    <!-- OPERATIONS -->
+    <section class="split ops">
+      <article class="card">
+        <div class="card-hd">
+          <div>
+            <div class="t">Shipment volume</div>
+            <div class="s">Trailing 30-day throughput across the network</div>
+          </div>
+          <div class="right">
+            <div class="seg" role="group" aria-label="Chart range">
+              <button type="button" data-range="7D" aria-pressed="false">7D</button>
+              <button type="button" data-range="30D" aria-pressed="true">30D</button>
+              <button type="button" data-range="90D" aria-pressed="false">90D</button>
+            </div>
+          </div>
+        </div>
+        <div class="card-bd">
+          <div class="chart-lead">
+            <span class="n" id="chartLead">248,631</span>
+            <span class="u">shipments</span>
+            <span class="delta up" style="font-size:12px"><svg width="9" height="9" viewBox="0 0 10 10" fill="currentColor"><path d="M5 1.5l3.2 4.2H1.8z"/></svg>12.8%</span>
+          </div>
+          <div class="plot" id="plot">
+            <svg id="chartSvg" viewBox="0 0 720 232" role="img" aria-label="Trailing 30-day shipment volume rising from 178,000 on Aug 11 to 248,631 on Sep 10, 2026">
+              <g id="chartGrid">
+                <line class="gl" x1="56" y1="169.3" x2="704" y2="169.3"/>
+                <line class="gl" x1="56" y1="108.0" x2="704" y2="108.0"/>
+                <line class="gl" x1="56" y1="46.7" x2="704" y2="46.7"/>
+                <line class="ax" x1="56" y1="200" x2="704" y2="200"/>
+                <text class="tick" x="48" y="173.3" text-anchor="end">180K</text>
+                <text class="tick" x="48" y="112.0" text-anchor="end">210K</text>
+                <text class="tick" x="48" y="50.7" text-anchor="end">240K</text>
+                <text class="tick" x="48" y="204" text-anchor="end">165K</text>
+                <text class="tick" x="56" y="220" text-anchor="start">Aug 11</text>
+                <text class="tick" x="272" y="220" text-anchor="middle">Aug 21</text>
+                <text class="tick" x="488" y="220" text-anchor="middle">Aug 31</text>
+                <text class="tick" x="704" y="220" text-anchor="end">Sep 10</text>
+              </g>
+              <path id="chartArea" fill="rgba(32,32,30,.055)" d="M56,173.4L110,161.2L164,146.8L218,155.0L272,120.3L326,101.9L380,89.6L434,114.1L488,71.2L542,54.8L596,65.1L650,42.6L704,29.0L704,200L56,200Z"/>
+              <path id="chartLine" fill="none" stroke="#20201E" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" d="M56,173.4L110,161.2L164,146.8L218,155.0L272,120.3L326,101.9L380,89.6L434,114.1L488,71.2L542,54.8L596,65.1L650,42.6L704,29.0"/>
+              <g id="chartEnd">
+                <circle cx="704" cy="29.0" r="5.5" fill="#FFFFFF"/>
+                <circle cx="704" cy="29.0" r="3.4" fill="#20201E"/>
+              </g>
+              <g id="chartHover" style="opacity:0">
+                <line id="hoverLine" class="ax" x1="0" y1="16" x2="0" y2="200" stroke="#20201E" stroke-opacity=".28"/>
+                <circle id="hoverDot" cx="0" cy="0" r="5.5" fill="#FFFFFF" stroke="#20201E" stroke-width="2"/>
+              </g>
+            </svg>
+            <div class="tip" id="tip"><div class="d"></div><div class="v"></div></div>
+          </div>
+          <p class="chart-note">Each point is the rolling 30-day shipment count on that date. Peak day-over-day gain: <strong>+9,000</strong> on Sep 2 after Route Group NW-42 came online.</p>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-hd">
+          <div>
+            <div class="t">Network status</div>
+            <div class="s">248,631 shipments accounted for</div>
+          </div>
+        </div>
+        <div class="card-bd">
+          <div class="stackbar" role="img" aria-label="Delivered 50.3%, in transit 36.8%, at facilities 11.4%, delayed 1.5%">
+            <i style="flex:0 0 50.25%;background:var(--good)"></i>
+            <i style="flex:0 0 36.79%;background:var(--info)"></i>
+            <i style="flex:0 0 11.41%;background:#B9B9B2"></i>
+            <i style="flex:0 0 1.55%;background:var(--warn)"></i>
+          </div>
+          <ul class="statlist">
+            <li><span class="dot" style="background:var(--good)"></span><span class="nm">Delivered</span><span class="n">124,946</span><span class="pc">50.3%</span></li>
+            <li><span class="dot" style="background:var(--info)"></span><span class="nm">In transit</span><span class="n">91,482</span><span class="pc">36.8%</span></li>
+            <li><span class="dot" style="background:#B9B9B2"></span><span class="nm">At facilities</span><span class="n">28,361</span><span class="pc">11.4%</span></li>
+            <li><span class="dot" style="background:var(--warn)"></span><span class="nm">Delayed</span><span class="n">3,842</span><span class="pc">1.5%</span></li>
+          </ul>
+          <div class="subnote">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" style="flex:none;margin-top:1px"><circle cx="7" cy="7" r="5.6"/><path d="M7 4.2v3.4M7 9.7v.1"/></svg>
+            <span><b>1,274</b> of the delayed shipments are in exception handling and need a manual decision.</span>
+          </div>
+        </div>
+      </article>
+    </section>
+
+    <!-- AI LAYER -->
+    <section class="card">
+      <div class="ai-grid">
+        <div class="ai-cell">
+          <div class="ai-eyebrow">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor"><path d="M7 .8l1.25 3.7 3.7 1.25-3.7 1.25L7 10.7 5.75 7 2.05 5.75 5.75 4.5 7 .8z"/></svg>
+            AI operations insight
+          </div>
+          <h3>12 routes are trending toward delayed delivery</h3>
+          <p>Mumbai → Delhi is driving most of it: hub dwell time is up 17% week over week, and the backlog is spilling onto three connecting lanes.</p>
+          <div class="ai-metrics">
+            <div class="chip"><div class="k">Shipments exposed</div><div class="v">2,481</div></div>
+            <div class="chip"><div class="k">Freight at risk</div><div class="v">$8.4M</div></div>
+            <div class="chip"><div class="k">Dwell time</div><div class="v">+17%</div></div>
+          </div>
+          <button class="ai-link" type="button">Review routes <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 6h7M6.5 3l3 3-3 3"/></svg></button>
+        </div>
+        <div class="ai-cell">
+          <div class="ai-eyebrow">
+            <svg width="11" height="11" viewBox="0 0 14 14" fill="currentColor"><path d="M7 .8l1.25 3.7 3.7 1.25-3.7 1.25L7 10.7 5.75 7 2.05 5.75 5.75 4.5 7 .8z"/></svg>
+            AI operations insight
+          </div>
+          <h3>6,214 shipments can be consolidated this week</h3>
+          <p>Partial loads on 84 overlapping lanes out of West and South can merge without changing any promised delivery date.</p>
+          <div class="ai-metrics">
+            <div class="chip"><div class="k">Capacity recovered</div><div class="v">14.8%</div></div>
+            <div class="chip"><div class="k">Lanes affected</div><div class="v">84</div></div>
+            <div class="chip"><div class="k">Est. cost saving</div><div class="v">$2.1M</div></div>
+          </div>
+          <button class="ai-link" type="button">View recommendations <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 6h7M6.5 3l3 3-3 3"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- EXCEPTIONS -->
+    <section class="card">
+      <div class="card-hd">
+        <div>
+          <div class="t">Requires attention</div>
+          <div class="s">3,842 shipments currently outside expected movement</div>
+        </div>
+        <div class="right">
+          <button class="btn" type="button">Assign owner</button>
+          <button class="btn" type="button">Open all <svg class="cv" width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2.5 6h7M6.5 3l3 3-3 3"/></svg></button>
+        </div>
+      </div>
+      <div class="tw">
+        <table>
+          <thead>
+            <tr>
+              <th style="padding-top:12px">Shipment</th>
+              <th style="padding-top:12px">Route</th>
+              <th style="padding-top:12px">Exception</th>
+              <th style="padding-top:12px">Carrier</th>
+              <th style="padding-top:12px" class="num">ETA impact</th>
+              <th style="padding-top:12px" class="num">Freight value</th>
+              <th style="padding-top:12px">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="id">LX-849201</td>
+              <td class="route">Mumbai <span class="arw">→</span> Delhi</td>
+              <td>Hub congestion</td>
+              <td>BlueRoute Logistics</td>
+              <td class="num eta">+4h</td>
+              <td class="num">$1.84M</td>
+              <td><span class="pill risk"><i></i>At risk</span></td>
+            </tr>
+            <tr>
+              <td class="id">LX-849184</td>
+              <td class="route">Chennai <span class="arw">→</span> Pune</td>
+              <td>Severe weather</td>
+              <td>Coromandel Freight</td>
+              <td class="num eta hi">+7h</td>
+              <td class="num">$948K</td>
+              <td><span class="pill delayed"><i></i>Delayed</span></td>
+            </tr>
+            <tr>
+              <td class="id">LX-849133</td>
+              <td class="route">Delhi <span class="arw">→</span> Jaipur</td>
+              <td>Vehicle breakdown</td>
+              <td>Northline Carriers</td>
+              <td class="num eta">+2h</td>
+              <td class="num">$412K</td>
+              <td><span class="pill risk"><i></i>At risk</span></td>
+            </tr>
+            <tr>
+              <td class="id">LX-849102</td>
+              <td class="route">Bengaluru <span class="arw">→</span> Hyderabad</td>
+              <td>Capacity shortage</td>
+              <td>Deccan Transport Co.</td>
+              <td class="num eta">+5h</td>
+              <td class="num">$2.31M</td>
+              <td><span class="pill risk"><i></i>At risk</span></td>
+            </tr>
+            <tr>
+              <td class="id">LX-848992</td>
+              <td class="route">Kolkata <span class="arw">→</span> Mumbai</td>
+              <td>Documentation hold</td>
+              <td>Eastway Multimodal</td>
+              <td class="num eta hi">+11h</td>
+              <td class="num">$1.62M</td>
+              <td><span class="pill blocked"><i></i>Blocked</span></td>
+            </tr>
+            <tr>
+              <td class="id">LX-848940</td>
+              <td class="route">Ahmedabad <span class="arw">→</span> Nagpur</td>
+              <td>Customs inspection</td>
+              <td>Sardar Freight Lines</td>
+              <td class="num eta hi">+9h</td>
+              <td class="num">$735K</td>
+              <td><span class="pill blocked"><i></i>Blocked</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid var(--border);font-size:11.5px;color:var(--muted)">
+        Showing 6 of 3,842 · sorted by freight value at risk · <strong style="color:var(--ink);font-weight:600">$8.4M</strong> exposed in total
+      </div>
+    </section>
+
+    <!-- PERFORMANCE -->
+    <section class="split perf">
+      <article class="card">
+        <div class="card-hd">
+          <div>
+            <div class="t">Regional performance</div>
+            <div class="s">Five operating regions · 248,631 shipments</div>
+          </div>
+        </div>
+        <div class="tw">
+          <table>
+            <thead>
+              <tr>
+                <th style="padding-top:12px">Region</th>
+                <th style="padding-top:12px" class="num">Shipments</th>
+                <th style="padding-top:12px" class="num">On time</th>
+                <th style="padding-top:12px" class="num">Avg. transit</th>
+                <th style="padding-top:12px" class="num">Exceptions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>India North</td><td class="num">62,481</td>
+                <td><div class="otcell"><span class="otdot" style="background:var(--good)"></span><span class="otval">97.8%</span></div></td>
+                <td class="num">28.4h</td><td class="num">681</td>
+              </tr>
+              <tr>
+                <td>India West</td><td class="num">71,204</td>
+                <td><div class="otcell"><span class="otdot" style="background:var(--good)"></span><span class="otval">96.9%</span></div></td>
+                <td class="num">26.8h</td><td class="num">812</td>
+              </tr>
+              <tr>
+                <td>India South</td><td class="num">58,821</td>
+                <td><div class="otcell"><span class="otdot" style="background:var(--warn)"></span><span class="otval">95.7%</span></div></td>
+                <td class="num">29.0h</td><td class="num">1,043</td>
+              </tr>
+              <tr>
+                <td>India East</td><td class="num">41,203</td>
+                <td><div class="otcell"><span class="otdot" style="background:var(--warn)"></span><span class="otval">94.8%</span></div></td>
+                <td class="num">32.0h</td><td class="num">1,121</td>
+              </tr>
+              <tr>
+                <td>India Central</td><td class="num">14,922</td>
+                <td><div class="otcell"><span class="otdot" style="background:var(--good)"></span><span class="otval">96.1%</span></div></td>
+                <td class="num">29.8h</td><td class="num">185</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr style="border-top:1px solid var(--border)">
+                <td style="font-weight:600">Network</td>
+                <td class="num" style="font-weight:600">248,631</td>
+                <td><div class="otcell"><span class="otval" style="font-weight:600">96.4%</span></div></td>
+                <td class="num" style="font-weight:600">28.7h</td>
+                <td class="num" style="font-weight:600">3,842</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-hd">
+          <div>
+            <div class="t">Fleet utilisation</div>
+            <div class="s">Capacity in use across all modes</div>
+          </div>
+        </div>
+        <div class="card-bd">
+          <div class="fleet-hero">
+            <span class="n">84.2%</span>
+            <span class="l">overall utilisation</span>
+          </div>
+          <ul class="fleet">
+            <li>
+              <div class="row"><span class="nm">Truck</span><span class="cap">3,184 units</span><span class="n">84%</span></div>
+              <div class="bar"><i style="width:84%"></i></div>
+            </li>
+            <li>
+              <div class="row"><span class="nm">Rail</span><span class="cap">612 rakes</span><span class="n">91%</span></div>
+              <div class="bar"><i style="width:91%"></i></div>
+            </li>
+            <li>
+              <div class="row"><span class="nm">Air</span><span class="cap">148 lanes</span><span class="n">72%</span></div>
+              <div class="bar"><i style="width:72%"></i></div>
+            </li>
+            <li>
+              <div class="row"><span class="nm">Ocean</span><span class="cap">877 containers</span><span class="n">88%</span></div>
+              <div class="bar"><i style="width:88%"></i></div>
+            </li>
+          </ul>
+        </div>
+      </article>
+    </section>
+
+    <!-- ACTIVITY -->
+    <section class="card">
+      <div class="card-hd">
+        <div>
+          <div class="t">Recent activity</div>
+          <div class="s">Live network events · last 60 minutes</div>
+        </div>
+        <div class="right"><span class="pill good"><i></i>Streaming</span></div>
+      </div>
+      <ul class="feed">
+        <li>
+          <span class="tm">09:14</span><span class="mk" style="background:var(--info)"></span>
+          <span class="tx">Shipment <span class="m">LX-849201</span> entered <b>Mumbai Hub</b> — dwell clock started</span>
+          <span class="src">Hub scanner</span>
+        </li>
+        <li>
+          <span class="tm">09:08</span><span class="mk" style="background:#B9B9B2"></span>
+          <span class="tx"><b>2,481</b> shipments assigned to Route Group <span class="m">NW-42</span></span>
+          <span class="src">Dispatch</span>
+        </li>
+        <li>
+          <span class="tm">08:56</span><span class="mk" style="background:var(--ai)"></span>
+          <span class="tx">AI flagged <b>12</b> high-risk routes for review</span>
+          <span class="src">Insight engine</span>
+        </li>
+        <li>
+          <span class="tm">08:42</span><span class="mk" style="background:#B9B9B2"></span>
+          <span class="tx">Carrier <b>BlueRoute Logistics</b> updated capacity for Sep 11 — 340 slots released</span>
+          <span class="src">Carrier API</span>
+        </li>
+        <li>
+          <span class="tm">08:31</span><span class="mk" style="background:var(--good)"></span>
+          <span class="tx"><b>8,421</b> shipments marked delivered across South and West</span>
+          <span class="src">Proof of delivery</span>
+        </li>
+        <li>
+          <span class="tm">08:19</span><span class="mk" style="background:var(--warn)"></span>
+          <span class="tx">Weather advisory raised on <b>Chennai → Pune</b> corridor — 214 shipments affected</span>
+          <span class="src">Risk monitor</span>
+        </li>
+      </ul>
+    </section>
+
+  </div>
+</div>
+
+<script>
+(function(){
+  var RANGES = {
+    '7D': {
+      v:[240.2,241.8,243.1,244.0,245.7,246.9,247.8,248.631],
+      dom:[238,251], ticks:[240,244,248],
+      dates:['Sep 3','Sep 4','Sep 5','Sep 6','Sep 7','Sep 8','Sep 9','Sep 10'],
+      xt:[0,3,5,7]
+    },
+    '30D': {
+      v:[178,184,191,187,204,213,219,207,228,236,231,242,248.631],
+      dom:[165,255], ticks:[180,210,240],
+      dates:['Aug 11','Aug 14','Aug 16','Aug 19','Aug 21','Aug 24','Aug 26','Aug 29','Aug 31','Sep 2','Sep 5','Sep 7','Sep 10'],
+      xt:[0,4,8,12]
+    },
+    '90D': {
+      v:[121.4,134.8,142.2,151.6,163.9,178.0,191.0,204.0,214.5,228.0,236.0,242.0,248.631],
+      dom:[110,260], ticks:[130,170,210,250],
+      dates:['Jun 12','Jun 22','Jul 2','Jul 12','Jul 22','Aug 1','Aug 11','Aug 16','Aug 21','Aug 26','Aug 31','Sep 5','Sep 10'],
+      xt:[0,4,8,12]
+    }
+  };
+
+  var X0=56, X1=704, Y0=200, Y1=16;
+  var svg=document.getElementById('chartSvg');
+  var grid=document.getElementById('chartGrid');
+  var line=document.getElementById('chartLine');
+  var area=document.getElementById('chartArea');
+  var endG=document.getElementById('chartEnd');
+  var hover=document.getElementById('chartHover');
+  var hLine=document.getElementById('hoverLine');
+  var hDot=document.getElementById('hoverDot');
+  var tip=document.getElementById('tip');
+  var lead=document.getElementById('chartLead');
+  var plot=document.getElementById('plot');
+  var cur='30D';
+
+  var fmt=function(n){return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g,',');};
+  var xAt=function(i,n){return n<2?X0:X0+(X1-X0)*i/(n-1);};
+  var yAt=function(v,d){return Y0-(v-d[0])/(d[1]-d[0])*(Y0-Y1);};
+  var el=function(t,a){var e=document.createElementNS('http://www.w3.org/2000/svg',t);for(var k in a)e.setAttribute(k,a[k]);return e;};
+
+  function render(key){
+    var r=RANGES[key], n=r.v.length, i;
+    var pts=r.v.map(function(v,i){return [xAt(i,n), yAt(v,r.dom)];});
+
+    var d=pts.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+','+p[1].toFixed(1);}).join('');
+    line.setAttribute('d',d);
+    area.setAttribute('d',d+'L'+X1+','+Y0+'L'+X0+','+Y0+'Z');
+
+    while(grid.firstChild) grid.removeChild(grid.firstChild);
+    r.ticks.forEach(function(t){
+      var y=yAt(t,r.dom);
+      grid.appendChild(el('line',{'class':'gl',x1:X0,y1:y.toFixed(1),x2:X1,y2:y.toFixed(1)}));
+      var tx=el('text',{'class':'tick',x:48,y:(y+4).toFixed(1),'text-anchor':'end'});
+      tx.textContent=t+'K'; grid.appendChild(tx);
+    });
+    grid.appendChild(el('line',{'class':'ax',x1:X0,y1:Y0,x2:X1,y2:Y0}));
+    var base=el('text',{'class':'tick',x:48,y:Y0+4,'text-anchor':'end'});
+    base.textContent=r.dom[0]+'K'; grid.appendChild(base);
+    r.xt.forEach(function(idx,k){
+      var anchor = k===0?'start':(k===r.xt.length-1?'end':'middle');
+      var tx=el('text',{'class':'tick',x:xAt(idx,n).toFixed(1),y:220,'text-anchor':anchor});
+      tx.textContent=r.dates[idx]; grid.appendChild(tx);
+    });
+
+    var last=pts[n-1];
+    endG.children[0].setAttribute('cx',last[0]); endG.children[0].setAttribute('cy',last[1].toFixed(1));
+    endG.children[1].setAttribute('cx',last[0]); endG.children[1].setAttribute('cy',last[1].toFixed(1));
+    lead.textContent=fmt(Math.round(r.v[n-1]*1000));
+    svg.setAttribute('aria-label','Trailing 30-day shipment volume over the last '+key.replace('D',' days')+', rising from '+fmt(Math.round(r.v[0]*1000))+' to '+fmt(Math.round(r.v[n-1]*1000))+'.');
+    cur=key;
+  }
+
+  document.querySelectorAll('.seg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      document.querySelectorAll('.seg button').forEach(function(o){o.setAttribute('aria-pressed', o===b?'true':'false');});
+      render(b.dataset.range);
+      hover.style.opacity=0; tip.style.opacity=0;
+    });
+  });
+
+  function track(ev){
+    var r=RANGES[cur], n=r.v.length;
+    var box=svg.getBoundingClientRect();
+    var px=(ev.clientX-box.left)/box.width*720;
+    var i=Math.round((px-X0)/((X1-X0)/(n-1)));
+    if(i<0)i=0; if(i>n-1)i=n-1;
+    var x=xAt(i,n), y=yAt(r.v[i],r.dom);
+    hLine.setAttribute('x1',x); hLine.setAttribute('x2',x);
+    hDot.setAttribute('cx',x); hDot.setAttribute('cy',y.toFixed(1));
+    hover.style.opacity=1;
+    tip.querySelector('.d').textContent=r.dates[i]+', 2026';
+    tip.querySelector('.v').textContent=fmt(Math.round(r.v[i]*1000))+' shipments';
+    tip.style.left=(x/720*100)+'%';
+    tip.style.top=(y/232*box.height-12)+'px';
+    tip.style.opacity=1;
+  }
+  plot.addEventListener('pointermove',track);
+  plot.addEventListener('pointerleave',function(){hover.style.opacity=0;tip.style.opacity=0;});
+})();
+</script>
+</body>
+</html>

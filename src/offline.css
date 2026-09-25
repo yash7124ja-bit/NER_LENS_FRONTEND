@@ -1,0 +1,6 @@
+.field-reports { padding: 1.25rem; }
+.field-reports form { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 1rem; margin: 1rem 0; }
+.field-reports label { display: flex; flex-direction: column; gap: .4rem; }
+.field-reports input,.field-reports select,.field-reports textarea,.field-reports button { min-height: 44px; font: inherit; max-width: 100%; }
+.field-reports .field-wide { grid-column: 1 / -1; }
+.field-reports li { padding: .5rem 0; overflow-wrap: anywhere; }
