@@ -1,10 +1,60 @@
 import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ReportStore, saveReport, syncReports, observationSchema, saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline.ts";
+import { ReportStore, savePhoto, saveReport, syncPhotos, syncReports, observationSchema, saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline.ts";
 import type { Session, Catalog, State } from "./api.ts";
 const observation = { segment_id: "authorized-segment", observed_at: "2026-09-01T00:00:00Z", geometry: { type: "Point" as const, coordinates: [92, 26] as [number, number] }, accuracy_m: 10, status_claim: "unknown" as const, condition_code: "obstruction", note: "Observed obstruction requiring review" };
 const acknowledgement = (body: { client_report_id: string }) => Response.json({ client_report_id: body.client_report_id, field_report_id: `server-${body.client_report_id}`, sync_state: "accepted_for_review" });
+test("photos bind to local report, survive restart, and retry the same checksum after lost acknowledgement", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const report = await saveReport("alice", observation, db);
+  const other = await saveReport("bob", observation, db);
+  await savePhoto("alice", report.client_report_id, 0, new Blob(["photo bytes"], { type: "image/png" }), db);
+  await savePhoto("bob", other.client_report_id, 0, new Blob(["other bytes"], { type: "image/png" }), db);
+  await assert.rejects(savePhoto("bob", report.client_report_id, 1, new Blob(["wrong owner"], { type: "image/png" }), db));
+  db.close();
+  db = new ReportStore(name);
+  const photo = (await db.media.where("owner").equals("alice").first())!;
+  assert.equal(photo.reportId, report.client_report_id);
+  assert.equal(photo.blob.size, 11);
+  assert.equal(photo.sha256.length, 64);
+  let calls = 0;
+  await syncPhotos("alice", db, async () => { calls++; throw Error("not canonical yet"); });
+  assert.equal(calls, 0);
+  await syncReports("alice", db, async (_url, init) => acknowledgement(JSON.parse(String(init?.body))));
+  const upload: typeof fetch = async (url, init) => {
+    assert.equal(String(url), `/v1/field-reports/server-${report.client_report_id}/media/0`);
+    assert.equal(new Headers(init?.headers).get("Idempotency-Key"), photo.sha256);
+    calls++;
+    if (calls === 1) throw Error("ack lost after server commit");
+    return Response.json({ field_report_id: `server-${report.client_report_id}`, slot: 0,
+      sha256: photo.sha256, upload_state: "received" });
+  };
+  await syncPhotos("alice", db, upload);
+  assert.equal((await db.media.get(photo.key))?.state, "retry_pending");
+  await syncPhotos("alice", db, upload);
+  assert.equal(await db.media.get(photo.key), undefined);
+  assert.equal(calls, 2);
+  assert.equal(await db.media.where("owner").equals("bob").count(), 1);
+  await db.delete();
+});
+test("photo upload keeps bytes under the original account through expired login and uncertain response", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const report = await saveReport("alice", observation, db);
+  await savePhoto("alice", report.client_report_id, 0, new Blob(["evidence"], { type: "image/png" }), db);
+  await syncReports("alice", db, async (_url, init) => acknowledgement(JSON.parse(String(init?.body))));
+  await syncPhotos("alice", db, async () => new Response(null, { status: 401 }));
+  const queued = (await db.media.where("owner").equals("alice").first())!;
+  assert.equal(queued.state, "reauth_required");
+  assert.equal(queued.blob.size, 8);
+  await syncPhotos("bob", db, async () => { throw Error("cross-account upload"); });
+  assert.equal(await db.media.count(), 1);
+  await syncPhotos("alice", db, async () => Response.json({ field_report_id: "wrong" }));
+  assert.equal((await db.media.get(queued.key))?.state, "retry_pending");
+  assert.equal(await db.media.count(), 1);
+  await db.delete();
+});
 test("100 reports survive restart, partial delivery and lost acknowledgements without duplicate logical writes", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);

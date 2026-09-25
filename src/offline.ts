@@ -17,11 +17,13 @@ export type QueuedReport = {
   observation: Observation; state: "saved_on_device" | "retry_pending" | "reauth_required" | "failed" | "conflict" | "accepted_for_review";
   attempts: number; message: string; canonical_id?: string;
 };
+export type QueuedPhoto = { key: string; owner: string; reportId: string; slot: number;
+  blob: Blob; sha256: string; state?: "saved_on_device" | "retry_pending" | "reauth_required" | "failed" | "conflict"; message?: string };
 export class ReportStore extends Dexie {
   reports!: Table<QueuedReport, string>;
   settings!: Table<{ key: string; value: string | number }, string>;
   contexts!: Table<OfflineContext, string>;
-  media!: Table<{key: string; owner: string; reportId: string; slot: number; blob: Blob; sha256: string}, string>;
+  media!: Table<QueuedPhoto, string>;
   constructor(name = "ner-lens-field-reports") {
     super(name);
     this.version(1).stores({ reports: "client_report_id, owner, state", settings: "key" });
@@ -50,8 +52,21 @@ export async function saveReport(owner: string, observation: Observation, db = r
     return report;
   });
 }
+export async function savePhoto(owner: string, localReportId: string, slot: number, file: Blob, db = reportStore) {
+  const report = await db.reports.get(localReportId);
+  if (!report || report.owner !== owner) throw new Error("Report belongs to another account or is missing");
+  if (!Number.isInteger(slot) || slot < 0 || slot > 3) throw new Error("Photo slot must be 1–4");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || !file.size || file.size > 2 * 1024 * 1024)
+    throw new Error("Choose a JPEG, PNG or WebP image up to 2 MB");
+  const key = `${owner}:${localReportId}:${slot}`;
+  if (await db.media.get(key)) throw new Error("This photo slot is already saved");
+  const sha256 = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", await file.arrayBuffer())),
+    byte => byte.toString(16).padStart(2, "0")).join("");
+  await db.media.add({ key, owner, reportId: localReportId, slot, blob: file, sha256,
+    state: "saved_on_device", message: "Saved on this device; not uploaded." });
+}
 export async function syncReports(owner: string, db = reportStore, send: typeof fetch = fetch) {
-  // ponytail: sequential text-only queue; add media transfer when the protected upload contract exists.
+  // ponytail: sequential queue; raise concurrency only if field throughput requires it.
   for (const row of await db.reports.where("owner").equals(owner).sortBy("client_sequence")) {
     if (["accepted_for_review", "failed", "conflict"].includes(row.state)) continue;
     await db.reports.update(row.client_report_id, { attempts: row.attempts + 1 });
@@ -78,6 +93,45 @@ export async function syncReports(owner: string, db = reportStore, send: typeof 
       await db.reports.update(row.client_report_id, { state: "accepted_for_review", canonical_id: ack.field_report_id, message: "Received for human review; this is not an operational road-status decision." });
     } catch {
       await db.reports.update(row.client_report_id, { state: "retry_pending", message: "Acknowledgement could not be verified. Same report ID will be retried." });
+      break;
+    }
+  }
+}
+
+export async function syncPhotos(owner: string, db = reportStore, send: typeof fetch = fetch) {
+  const reports = await db.reports.where("owner").equals(owner).toArray();
+  for (const photo of await db.media.where("owner").equals(owner).toArray()) {
+    if (photo.state === "failed" || photo.state === "conflict") continue;
+    const report = reports.find(row => row.client_report_id === photo.reportId || row.canonical_id === photo.reportId);
+    if (!report?.canonical_id || report.state !== "accepted_for_review") continue;
+    let response: Response;
+    try {
+      response = await send(`/v1/field-reports/${report.canonical_id}/media/${photo.slot}`, {
+        method: "PUT", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(30000),
+        headers: { "Content-Type": photo.blob.type, "Idempotency-Key": photo.sha256,
+          "X-Media-SHA256": photo.sha256, "X-Ner-Lens-Actor": owner }, body: photo.blob,
+      });
+    } catch {
+      await db.media.update(photo.key, { state: "retry_pending", message: "Connection lost; photo retained." });
+      break;
+    }
+    if (response.status === 401 || response.status === 403) {
+      await db.media.update(photo.key, { state: "reauth_required", message: "Sign in as the original account; photo retained." });
+      break;
+    }
+    if (!response.ok) {
+      const state = response.status === 409 ? "conflict" : response.status >= 500 || response.status === 429 ? "retry_pending" : "failed";
+      await db.media.update(photo.key, { state, message: `Upload returned ${response.status}; photo retained.` });
+      if (state === "retry_pending") break;
+      continue;
+    }
+    try {
+      const ack = await response.json();
+      if (ack.field_report_id !== report.canonical_id || ack.slot !== photo.slot || ack.sha256 !== photo.sha256 || ack.upload_state !== "received")
+        throw new Error("Invalid photo acknowledgement");
+      await db.media.delete(photo.key);
+    } catch {
+      await db.media.update(photo.key, { state: "retry_pending", message: "Acknowledgement uncertain; retry with the same checksum." });
       break;
     }
   }
