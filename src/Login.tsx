@@ -3,9 +3,11 @@ import { ApiError, request, type Session } from "./api";
 export default function Login({
   onLogin,
   message,
+  workspaceName,
 }: {
   onLogin: (session: Session) => void;
   message: string;
+  workspaceName: string;
 }) {
   const [email, setEmail] = useState(""),
     [password, setPassword] = useState("");
@@ -109,7 +111,7 @@ export default function Login({
       <section className="login-card card">
         <div className="login-card-heading">
           <span className="eyebrow">AUTHORIZED ACCESS</span>
-          <h2>Welcome to NER LENS</h2>
+          <h2>Welcome to NER LENS {workspaceName}</h2>
           <p>Sign in with your organization account.</p>
         </div>
         <form onSubmit={submit} className="login-form" aria-busy={busy}>

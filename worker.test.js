@@ -38,3 +38,22 @@ test("scheduled check rejects a cold-start HTML page", async () => {
     globalThis.fetch = original;
   }
 });
+
+test("workspace URLs use assets while API and health routes never use the SPA", async () => {
+  const paths = [];
+  const env = {ASSETS: {fetch: async request => {
+    paths.push(new URL(request.url).pathname);
+    return new Response("<html>App</html>", {headers: {"Content-Type": "text/html"}});
+  }}};
+  for (const path of ["/control/", "/authority/", "/field/"]) {
+    const response = await worker.fetch(new Request(`https://frontend.example${path}`), env);
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(paths, ["/control/", "/authority/", "/field/"]);
+  for (const path of ["/v1/auth/session", "/health/ready"]) {
+    const response = await worker.fetch(new Request(`https://frontend.example${path}`), env);
+    assert.equal(response.status, 503);
+    assert.notEqual(response.headers.get("content-type"), "text/html");
+  }
+  assert.equal(paths.length, 3);
+});

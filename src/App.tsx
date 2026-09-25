@@ -3,6 +3,7 @@ import Workflows from "./Workflows";
 import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
 import CorridorMap from "./CorridorMap";
+import { permittedWorkspaces, workspaceFromPath, workspaces } from "./workspace";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline";
 import { useEffect, useRef, useState, type ReactNode } from "react";
@@ -83,6 +84,8 @@ function ModelReadiness() {
   </div></section>;
 }
 export default function App() {
+  const requestedWorkspace = workspaceFromPath(window.location.pathname);
+  const workspace = requestedWorkspace ?? "control";
   const queryClient = useQueryClient();
   const [session, setSession] = useState<Session | null>(null);
   const [draftOnly, setDraftOnly] = useState(false);
@@ -100,6 +103,16 @@ export default function App() {
     [error, setError] = useState(""),
     [refresh, setRefresh] = useState(0);
   const [ready, setReady] = useState("Checking service");
+  const availableWorkspaces = permittedWorkspaces(session?.user.roles ?? []);
+  const authorized = availableWorkspaces.includes(workspace);
+  const adminOnly = workspace === "authority" && Boolean(session?.user.roles.includes("system_admin")) &&
+    !session?.user.roles.some(role => ["regional_viewer", "dispatcher", "reviewer", "district_officer", "field_reporter"].includes(role));
+
+  useEffect(() => {
+    if (session && !requestedWorkspace && availableWorkspaces.length) {
+      window.location.replace(`/${availableWorkspaces[0]}/`);
+    }
+  }, [session, requestedWorkspace, availableWorkspaces.join(",")]);
 
   useEffect(() => {
     const navigate=()=>{const id=window.location.hash.slice(1).split(":")[0]; if(id)document.getElementById(id)?.scrollIntoView({behavior:"smooth"});};
@@ -156,7 +169,7 @@ export default function App() {
         if (!controller.signal.aborted) setReady("API unavailable");
       });
     return () => controller.abort();
-  }, [refresh]);
+  }, [refresh, session]);
   useEffect(() => {
     if (!session || draftOnly) return;
     const timer = window.setTimeout(
@@ -183,11 +196,11 @@ export default function App() {
     }
   }
   useEffect(() => {
-    if (!session || draftOnly) return;
+    if (!session || draftOnly || !authorized) return;
     const controller = new AbortController();
     setBusy(true);
     setError("");
-    request<Catalog>("/v1/corridors", controller.signal)
+    request<Catalog>(adminOnly ? "/v1/admin/corridors" : "/v1/corridors", controller.signal)
       .then((data) => {
         if (controller.signal.aborted) return;
         setCatalog(data);
@@ -205,10 +218,10 @@ export default function App() {
         }
       });
     return () => controller.abort();
-  }, [session, refresh, draftOnly]);
+  }, [session, refresh, draftOnly, authorized, adminOnly]);
   useEffect(() => {
     pageRequest.current?.abort();
-    if (!session || !corridorId || draftOnly) return;
+    if (!session || !corridorId || draftOnly || !authorized || adminOnly) return;
     const controller = new AbortController();
     setBusy(true);
     setState(current => current?.corridor_id === corridorId ? current : null);
@@ -227,7 +240,7 @@ export default function App() {
         if (!controller.signal.aborted) setBusy(false);
       });
     return () => controller.abort();
-  }, [session, corridorId, draftOnly, refresh]);
+  }, [session, corridorId, draftOnly, refresh, authorized, adminOnly]);
   async function logout() {
     setSigningOut(true);
     setError("");
@@ -301,7 +314,7 @@ export default function App() {
             </span>
             <strong>NER LENS</strong>
             <span className="sep">/</span>
-            <span>Corridor control</span>
+            <span>{workspaces[workspace].name}</span>
           </div>
           <div className="tools">
             <span className="stamp">{ready}</span>
@@ -322,13 +335,14 @@ export default function App() {
           </div>
         </div>
       </header>
-      {checking ? (
+      {checking || (session && !requestedWorkspace && availableWorkspaces.length > 0) ? (
         <main id="main" className="session-check" role="status">
           Checking your session…
         </main>
       ) : !session ? (
         <Login
           message={error}
+          workspaceName={workspaces[workspace].name}
           onLogin={async (data) => {
             setError("");
             setDraftOnly(false);
@@ -338,6 +352,15 @@ export default function App() {
             setSession(data);
           }}
         />
+      ) : !authorized ? (
+        <main id="main" className="shell" tabIndex={-1}>
+          <section className="card"><header className="card-hd"><div><h1>Workspace access required</h1><p>Your account does not have the role for NER LENS {workspaces[workspace].name}.</p></div></header>
+            <div className="card-bd"><p>Ask an administrator for the appropriate corridor role, or open a workspace already assigned to you.</p>
+              {availableWorkspaces.map(id => <p key={id}><a href={`/${id}/`}>Open NER LENS {workspaces[id].name}</a></p>)}
+              {!availableWorkspaces.length && <p>No application role is assigned to this account.</p>}
+              <button onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button>
+            </div></section>
+        </main>
       ) : (
         <main id="main" className="shell" tabIndex={-1}>
           {(draftOnly || !connected) && <div className="notice" role="status">
@@ -346,9 +369,9 @@ export default function App() {
           </div>}
           <div className="page-heading">
             <div>
-              <p className="eyebrow">NORTH EAST REGION · EVIDENCE EXPLORER</p>
-              <h1>Network control</h1>
-              <p>Monitor corridor conditions, review field evidence, and coordinate deliveries.</p>
+              <p className="eyebrow">NORTH EAST REGION · {workspaces[workspace].name.toUpperCase()}</p>
+              <h1>NER LENS {workspaces[workspace].name}</h1>
+              <p>{workspaces[workspace].description}</p>
             </div>
             <span className="pill">
               {state?.data_mode ?? catalog?.data_mode ?? "Read-only"}
@@ -356,7 +379,14 @@ export default function App() {
             </span>
           </div>
           <div className="workspace-status"><strong>SIH MVP · Replay workspace</strong><p>Provider connection status is shown below. The corridor geometry is synthetic, and route safety and prediction accuracy are not validated. Your account permissions determine which operations you can perform.</p></div>
-          <nav className="workspace-nav" aria-label="Workspace sections"><a href="#segments">Corridor conditions</a><a href="#operations">Operations desk</a><a href="#field-reports">Field reports & offline queue</a><a href="#sources">Source connections</a><a href="#user-stories">SIH user stories</a>{session.user.roles.includes("system_admin") && <a href="#administration">People & access</a>}</nav>
+          <nav className="workspace-nav" aria-label="Applications">{availableWorkspaces.map(id => <a key={id} href={`/${id}/`} aria-current={workspace === id ? "page" : undefined}>NER LENS {workspaces[id].name}</a>)}</nav>
+          <nav className="workspace-nav" aria-label="Workspace sections">
+            {!adminOnly && <a href="#segments">Corridor conditions</a>}
+            {workspace === "control" && <><a href="#operations:missions">Deliveries</a><a href="#operations:routes">Route planning</a><a href="#sources">Source connections</a></>}
+            {workspace === "authority" && <>{!adminOnly && <><a href="#operations:reports">Evidence review</a><a href="#operations:status">Road decisions</a></>}{session.user.roles.includes("system_admin") && <a href="#administration">People & access</a>}{!adminOnly && <a href="#sources">Source connections</a>}</>}
+            {workspace === "field" && <><a href="#field-reports">Field reports & offline queue</a><a href="#operations:missions">Assigned missions</a></>}
+            {!adminOnly && <a href="#user-stories">SIH user stories</a>}
+          </nav>
           {error && (
             <div className="notice error" role="alert">
               {error}
@@ -382,26 +412,25 @@ export default function App() {
                   ))}
                 </select>
               </div>
-              <p className="stamp">
-                {state
-                  ? `Snapshot ${new Date(state.as_of).toLocaleString()}`
-                  : "No snapshot loaded"}
-              </p>
+              <p className="stamp">{adminOnly ? "Administration scope" : state
+                ? `Snapshot ${new Date(state.as_of).toLocaleString()}` : "No snapshot loaded"}</p>
             </div>
             <div aria-live="polite" className="sr-only">
               {busy
                 ? "Loading corridor data"
                 : `${visible.length} segments shown`}
             </div>
-            {busy && !state && (
+            {busy && !state && !adminOnly && (
               <div className="skeleton" aria-label="Loading corridor data" />
             )}
-            {!busy && !state && !error && (
+            {!busy && !state && !error && !adminOnly && (
               <p className="notice">
                 No corridor state is available. Select a corridor or refresh
                 after the audited data is imported.
               </p>
             )}
+            {adminOnly && !draftOnly && corridorId && <Administration key={"admin-" + corridorId + session.user.actor_id} session={session} corridorId={corridorId} manageUsers />}
+            {workspace === "field" && state && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
             {state && (
               <div className="rows">
                 <section className="kpis" aria-label="Loaded corridor summary">
@@ -683,10 +712,9 @@ export default function App() {
                     </div>
                   </div>
                 </Card>
-                {!draftOnly && corridor && <Workflows key={corridor.corridor_id + session.user.actor_id} session={session} corridor={corridor} segments={segments} onChange={() => setRefresh(r => r + 1)} />}
-                <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>
-                {!draftOnly && corridor && <Administration key={"admin-" + corridor.corridor_id + session.user.actor_id} session={session} corridorId={corridor.corridor_id} />}
-                {!draftOnly && <ModelReadiness />}{!draftOnly && <div id="sources"><SourceHealth owner={session.user.actor_id} /></div>}
+                {!draftOnly && corridor && <Workflows key={corridor.corridor_id + session.user.actor_id} session={session} corridor={corridor} segments={segments} onChange={() => setRefresh(r => r + 1)} workspace={workspace} />}
+                {!draftOnly && corridor && <Administration key={"admin-" + corridor.corridor_id + session.user.actor_id} session={session} corridorId={corridor.corridor_id} manageUsers={workspace === "authority"} />}
+                {!draftOnly && workspace === "control" && <ModelReadiness />}{!draftOnly && workspace !== "field" && <div id="sources"><SourceHealth owner={session.user.actor_id} /></div>}
               </div>
             )}
           </>

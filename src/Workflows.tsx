@@ -1,6 +1,7 @@
 import ReportMedia from "./ReportMedia";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { ApiError, request, segmentName, type Corridor, type Segment, type Session } from "./api";
+import type { Workspace } from "./workspace";
 import "./workflows.css";
 
 type Capability = { allowed: boolean; reason: string };
@@ -9,11 +10,13 @@ type Mission = { mission_id: string; cargo_class: string; priority: string; stat
 type Comparison = { blocking_constraints: {segment_id: string; reason: string}[]; warnings: string[]; provider: string; retrieved_at: string; mode: string; routes: { route_id: string; reason: string; score_components: { travel_minutes: number } }[] };
 const readable = (s: string) => s.replaceAll("_", " ");
 const date = (s: string) => new Date(s).toLocaleString();
-export default function Workflows({ session, corridor, segments, onChange }: {
-  session: Session; corridor: Corridor; segments: Segment[]; onChange: () => void;
+export default function Workflows({ session, corridor, segments, onChange, workspace }: {
+  session: Session; corridor: Corridor; segments: Segment[]; onChange: () => void; workspace: Workspace;
 }) {
-  const [tab, setTab] = useState(() => window.location.hash.split(":")[1] || "reports");
-  useEffect(() => {const change=()=>{const value=window.location.hash.split(":")[1]; if(["reports","status","routes","missions"].includes(value))setTab(value);};
+  const tabs = workspace === "authority" ? ["reports", "status"] :
+    workspace === "field" ? ["missions"] : ["missions", "routes"];
+  const [tab, setTab] = useState(() => tabs.includes(window.location.hash.split(":")[1]) ? window.location.hash.split(":")[1] : tabs[0]);
+  useEffect(() => {const change=()=>{const value=window.location.hash.split(":")[1]; if(tabs.includes(value))setTab(value);};
     window.addEventListener("hashchange",change); return()=>window.removeEventListener("hashchange",change);},[]);
   const [capabilities, setCapabilities] = useState<Record<string, Capability>>({});
   const [segmentId, setSegmentId] = useState(segments[0]?.segment_id ?? "");
@@ -109,11 +112,11 @@ export default function Workflows({ session, corridor, segments, onChange }: {
     <button disabled={busy}>{busy ? "Saving…" : routeOnly ? "Compare baseline routes" : "Create mission"}</button>
   </form>;
   return <section id="operations" className="card operations-console">
-    <header className="card-hd"><div><p className="eyebrow">OPERATIONS DESK</p><h2>From field evidence to delivery</h2><p>Capture → review → publish status → plan → complete. Every saved action is recorded in the database.</p></div><span className="pill">Replay workspace</span></header>
-    <nav className="workflow-tabs" aria-label="Operational workflows">{[["reports", "01", "Evidence & review"], ["status", "02", "Road decisions"], ["routes", "03", "Route planning"], ["missions", "04", "Mission board"]].map(([id, n, label]) => <button key={id} aria-pressed={tab === id} onClick={() => { setTab(id); window.history.replaceState(null,"",`#operations:${id}`); setError(""); setMessage(""); }}><small>{n}</small>{label}</button>)}</nav>
+    <header className="card-hd"><div><p className="eyebrow">{workspace === "authority" ? "AUTHORITY DESK" : workspace === "field" ? "FIELD MISSIONS" : "CONTROL DESK"}</p><h2>{workspace === "authority" ? "Evidence and road decisions" : workspace === "field" ? "Assigned missions" : "Delivery operations"}</h2><p>Every saved action is recorded in the database. Road status changes require authority; deliveries remain dispatcher decisions.</p></div><span className="pill">Replay workspace</span></header>
+    <nav className="workflow-tabs" aria-label="Operational workflows">{[["reports", "01", "Evidence & review"], ["status", "02", "Road decisions"], ["routes", "03", "Route planning"], ["missions", "04", "Mission board"]].filter(([id]) => tabs.includes(id)).map(([id, n, label]) => <button key={id} aria-pressed={tab === id} onClick={() => { setTab(id); window.history.replaceState(null,"",`#operations:${id}`); setError(""); setMessage(""); }}><small>{n}</small>{label}</button>)}</nav>
     <div className="card-bd">
       {error && <p className="notice error" role="alert">{error}</p>}{message && <p className="workflow-success" role="status">{message}</p>}
-      {tab === "reports" && <><div className="workflow-heading"><div><h3>Evidence inbox</h3><p>Reports are claims until reviewed. Accepting evidence does not automatically open a road.</p></div><a href="#field-reports">Capture a field report ↓</a></div>{chooseSegment}
+      {tab === "reports" && <><div className="workflow-heading"><div><h3>Evidence inbox</h3><p>Reports are claims until reviewed. Accepting evidence does not automatically open a road.</p></div><span>Field reporters capture observations in NER LENS Field.</span></div>{chooseSegment}
         {!canReports ? gate("Field reporter or reviewer", "Field reporters see their submissions; reviewers can assess reports for their assigned corridor.") : <>{reports.length === 0 && <div className="workflow-empty"><strong>No reports for this segment</strong><p>Submit a report using Field reports below, then refresh this inbox.</p></div>}
         {reports.map(r => <article className="report-row" key={r.field_report_id}><div><span className="status-tag">{readable(r.review_state)}</span><h4>{readable(r.status_claim)} reported · {date(r.observed_at)}</h4><p>{r.note || "No additional note supplied."}</p><small>Report {r.field_report_id}</small></div>
           {allowed("review_evidence") && <ReportMedia reportId={r.field_report_id} owner={session.user.actor_id} />}{allowed("review_evidence") && <form onSubmit={e => { e.preventDefault(); const d = new FormData(e.currentTarget); void act(() => mutate(`/v1/reviews/${r.field_report_id}`, { action: d.get("action"), note: d.get("note") }), "Review recorded."); }}><label>Decision<select name="action"><option value="accept">Accept evidence</option><option value="reject">Reject evidence</option><option value="needs_clarification">Request clarification</option></select></label><label>Reason<textarea name="note" required maxLength={4000} /></label><button disabled={busy}>Save review</button></form>}</article>)}<button disabled={busy} onClick={() => setRevision(r => r + 1)}>Refresh inbox</button></>}
