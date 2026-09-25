@@ -57,7 +57,7 @@ export default function OfflineReports({ session, segments, authenticated = true
     finally { saving.current = false; }
   });
   return <section className="card field-reports" aria-labelledby="field-reports-title">
-    <header className="card-hd"><div><h2 id="field-reports-title">Offline field reports</h2><p>{online ? "Connected" : "Offline"} · {rows.filter(row => row.state !== "accepted_for_review").length} reports awaiting delivery or action</p></div></header>
+    <header className="card-hd"><div><h2 id="field-reports-title">Offline field reports</h2><p>{!authenticated ? "Local draft mode · sign in before sync" : online ? "Connected" : "Offline"} · {rows.filter(row => row.state !== "accepted_for_review").length} reports awaiting delivery or action</p></div></header>
     <label>Safety copy language <select value={locale} onChange={event => setLocale(event.target.value)}><option value="en">English</option><option value="as">Assamese draft — unreviewed</option></select></label>
     <p lang={locale}>{language.t("safety", { lng: locale })}</p>
     {locale === "as" && <p>Assamese draft v1 — not reviewed by a native speaker; use English for operational decisions.</p>}

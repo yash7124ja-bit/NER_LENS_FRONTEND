@@ -378,7 +378,7 @@ export default function App() {
               {state?.data_mode ? " data" : ""}
             </span>
           </div>
-          <div className="workspace-status"><strong>SIH MVP · Replay workspace</strong><p>Provider connection status is shown below. The corridor geometry is synthetic, and route safety and prediction accuracy are not validated. Your account permissions determine which operations you can perform.</p></div>
+          <div className="workspace-status"><strong>SIH MVP · Replay workspace</strong><p>{workspace === "field" ? "Save observations on this device, then synchronize after signing in. The corridor geometry is synthetic and does not establish road safety." : "Provider connection status is shown below. The corridor geometry is synthetic, and route safety and prediction accuracy are not validated. Your account permissions determine which operations you can perform."}</p></div>
           <nav className="workspace-nav" aria-label="Applications">{availableWorkspaces.map(id => <a key={id} href={`/${id}/`} aria-current={workspace === id ? "page" : undefined}>NER LENS {workspaces[id].name}</a>)}</nav>
           <nav className="workspace-nav" aria-label="Workspace sections">
             {!adminOnly && <a href="#segments">Corridor conditions</a>}
