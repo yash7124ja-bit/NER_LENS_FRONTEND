@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "628315155401",
+    "project_id": "ner-lens-driver-yj",
+    "storage_bucket": "ner-lens-driver-yj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:628315155401:android:4b8eb71b6bedd2353ad618",
+        "android_client_info": {
+          "package_name": "org.nerlens.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDPaI8UviLKXtd6FvxJdJ334mV-IjHMESo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
