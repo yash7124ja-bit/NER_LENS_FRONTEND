@@ -1,4 +1,5 @@
 import ReportMedia from "./ReportMedia";
+import ReportHistory from "./ReportHistory";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import i18next from "i18next";
@@ -88,7 +89,7 @@ export default function OfflineReports({ session, segments, authenticated = true
     </form>}
     <button type="button" disabled={!online || busy || !authenticated} onClick={() => void synchronize()}>{busy ? "Synchronizing…" : "Synchronize saved reports"}</button>
     <p role="status">{message}</p>
-    <ul>{rows.map(row => <li key={row.client_report_id}><strong>{row.state.replaceAll("_", " ")}</strong> · {row.observation.note}<br /><small>{row.message} ID: {row.client_report_id}</small><ReportMedia reportId={row.canonical_id && authenticated ? row.canonical_id : undefined} localId={row.client_report_id} owner={owner} upload /></li>)}</ul>
+    <ul>{rows.map(row => <li key={row.client_report_id}><strong>{row.state.replaceAll("_", " ")}</strong> · {row.observation.note}<br /><small>{row.message} ID: {row.client_report_id}</small><ReportMedia reportId={row.canonical_id && authenticated ? row.canonical_id : undefined} localId={row.client_report_id} owner={owner} upload />{row.canonical_id && authenticated && <ReportHistory reportId={row.canonical_id} />}</li>)}</ul>
     {rows.some(row => ["failed", "conflict"].includes(row.state)) && <p>Failed and conflicting reports are preserved. Contact an authorized reviewer with the report ID; capture a new report if a correction is needed.</p>}
   </section>;
 }
