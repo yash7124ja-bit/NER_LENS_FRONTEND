@@ -2,6 +2,7 @@ import Login from "./Login";
 import Workflows from "./Workflows";
 import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
+import RouteAlerts from "./RouteAlerts";
 import CorridorMap from "./CorridorMap";
 import { ArrowClockwise, ArrowRight, ArrowUpRight, MapTrifold } from "@phosphor-icons/react";
 import { permittedWorkspaces, workspaceFromPath, workspaces } from "./workspace";
@@ -386,7 +387,7 @@ export default function App() {
             {!adminOnly && <a href="#segments">Corridor conditions</a>}
             {workspace === "control" && <><a href="#operations:missions">Deliveries</a><a href="#operations:routes">Route planning</a><a href="#sources">Source connections</a></>}
             {workspace === "authority" && <>{!adminOnly && <><a href="#operations:reports">Evidence review</a><a href="#operations:status">Road decisions</a></>}{session.user.roles.includes("system_admin") && <a href="#administration">People & access</a>}{!adminOnly && <a href="#sources">Source connections</a>}</>}
-            {workspace === "field" && <><a href="#field-reports">Field reports & offline queue</a><a href="#operations:missions">Assigned missions</a></>}
+            {workspace === "field" && <>{session.user.roles.includes("field_reporter") && <a href="#field-reports">Field reports & offline queue</a>}{session.user.roles.includes("driver") && <a href="#route-alerts">Route alerts</a>}<a href="#operations:missions">Assigned missions</a></>}
             {!adminOnly && <a href="#user-stories">SIH user stories</a>}
           </nav>
           {error && (
@@ -432,7 +433,8 @@ export default function App() {
               </p>
             )}
             {adminOnly && !draftOnly && corridorId && <Administration key={"admin-" + corridorId + session.user.actor_id} session={session} corridorId={corridorId} manageUsers />}
-            {workspace === "field" && state && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
+            {workspace === "field" && state && session.user.roles.includes("field_reporter") && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
+            {workspace === "field" && session.user.roles.includes("driver") && <RouteAlerts session={session} authenticated={!draftOnly} />}
             {state && (
               <div className="rows">
                 <section className="brief-band" aria-label="Corridor brief">

@@ -2,9 +2,39 @@ import "fake-indexeddb/auto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ReportStore, savePhoto, saveReport, syncPhotos, syncReports, observationSchema, saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline.ts";
+import { cacheRouteAlerts, cachedRouteAlerts, queueRouteAlertDecision, syncRouteAlertDecisions } from "./alertQueue.ts";
 import type { Session, Catalog, State } from "./api.ts";
 const observation = { segment_id: "authorized-segment", observed_at: "2026-09-01T00:00:00Z", geometry: { type: "Point" as const, coordinates: [92, 26] as [number, number] }, accuracy_m: 10, status_claim: "unknown" as const, condition_code: "obstruction", note: "Observed obstruction requiring review" };
 const acknowledgement = (body: { client_report_id: string }) => Response.json({ client_report_id: body.client_report_id, field_report_id: `server-${body.client_report_id}`, sync_state: "accepted_for_review" });
+test("route alert decision survives restart, stays with its owner, and retries the same key", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const alert = { alert_id: crypto.randomUUID(), mission_id: "mission-1", route_id: "route-2",
+    message: "Review candidate", reason: "Authority restriction", created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 600000).toISOString(), delivery_state: "delivered_in_app",
+    acknowledgment: null };
+  await cacheRouteAlerts("alice", [alert], db);
+  await assert.rejects(queueRouteAlertDecision("bob", alert.alert_id, "accept", db));
+  const queued = await queueRouteAlertDecision("alice", alert.alert_id, "accept", db);
+  db.close();
+  db = new ReportStore(name);
+  assert.equal((await cachedRouteAlerts("alice", db))[0].idempotency_key, queued.idempotency_key);
+  assert.deepEqual(await cachedRouteAlerts("bob", db), []);
+  let calls = 0;
+  const send: typeof fetch = async (_url, init) => {
+    calls++;
+    assert.equal(new Headers(init?.headers).get("Idempotency-Key"), queued.idempotency_key);
+    if (calls === 1) throw Error("Response lost after commit");
+    return Response.json({ alert_id: alert.alert_id, decision: "accept", selection_id: "selected-2" });
+  };
+  await syncRouteAlertDecisions("alice", db, send);
+  assert.equal((await cachedRouteAlerts("alice", db))[0].sync_state, "retry_pending");
+  await syncRouteAlertDecisions("alice", db, send);
+  assert.equal((await cachedRouteAlerts("alice", db))[0].acknowledgment?.selection_id, "selected-2");
+  await syncRouteAlertDecisions("alice", db, send);
+  assert.equal(calls, 2);
+  await db.delete();
+});
 test("photos bind to local report, survive restart, and retry the same checksum after lost acknowledgement", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);

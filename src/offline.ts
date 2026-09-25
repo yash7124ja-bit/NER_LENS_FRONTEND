@@ -19,16 +19,25 @@ export type QueuedReport = {
 };
 export type QueuedPhoto = { key: string; owner: string; reportId: string; slot: number;
   blob: Blob; sha256: string; state?: "saved_on_device" | "retry_pending" | "reauth_required" | "failed" | "conflict"; message?: string };
+export type CachedRouteAlert = {
+  alert_id: string; owner: string; mission_id: string; route_id: string; message: string;
+  reason: string; created_at: string; expires_at: string; delivery_state: string;
+  acknowledgment: { decision: string; acknowledged_at: string; selection_id: string | null } | null;
+  pending_decision?: "accept" | "decline"; idempotency_key?: string;
+  sync_state?: "saved_on_device" | "retry_pending" | "reauth_required" | "conflict";
+};
 export class ReportStore extends Dexie {
   reports!: Table<QueuedReport, string>;
   settings!: Table<{ key: string; value: string | number }, string>;
   contexts!: Table<OfflineContext, string>;
   media!: Table<QueuedPhoto, string>;
+  alerts!: Table<CachedRouteAlert, string>;
   constructor(name = "ner-lens-field-reports") {
     super(name);
     this.version(1).stores({ reports: "client_report_id, owner, state", settings: "key" });
     this.version(2).stores({ contexts: "key" });
     this.version(3).stores({ media: "key, owner, reportId" });
+    this.version(4).stores({ alerts: "alert_id, owner, mission_id" });
   }
 }
 export const reportStore = new ReportStore();

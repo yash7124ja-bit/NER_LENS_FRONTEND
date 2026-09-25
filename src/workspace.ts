@@ -13,8 +13,8 @@ export const workspaces: Record<Workspace, { name: string; roles: string[]; desc
   },
   field: {
     name: "Field",
-    roles: ["field_reporter"],
-    description: "Capture observations and synchronize saved reports.",
+    roles: ["field_reporter", "driver"],
+    description: "Capture observations, follow assigned missions, and acknowledge alerts.",
   },
 };
 
