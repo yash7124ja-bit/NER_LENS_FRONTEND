@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "node --experimental-strip-types --test src/api.test.ts src/offline.test.ts src/workspace.test.ts worker.test.js",
+    "test": "node --experimental-strip-types --test src/api.test.ts src/api-contract.test.mjs src/offline.test.ts src/workspace.test.ts worker.test.js",
     "preview": "vite preview --host 127.0.0.1",
     "deploy": "npm run build && wrangler deploy --keep-vars"
   },
