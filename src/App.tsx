@@ -3,6 +3,8 @@ import Workflows from "./Workflows";
 import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
 import RouteAlerts from "./RouteAlerts";
+import DriverMissions from "./DriverMissions";
+import { prepareDriverAccount } from "./driverQueue";
 import CorridorMap from "./CorridorMap";
 import { ArrowClockwise, ArrowRight, ArrowUpRight, MapTrifold } from "@phosphor-icons/react";
 import { permittedWorkspaces, workspaceFromPath, workspaces } from "./workspace";
@@ -126,6 +128,7 @@ export default function App() {
     request<Session>("/v1/auth/session", controller.signal)
       .then(async (data) => {
         await clearOfflineContext();
+        await prepareDriverAccount(data.user.actor_id);
         if (!controller.signal.aborted) setSession(data);
       })
       .catch(async (err) => {
@@ -135,7 +138,7 @@ export default function App() {
             if (cached && !controller.signal.aborted) {
               setDraftOnly(true);
               setSavedAt(cached.saved_at);
-              setSession({ user: { ...cached.profile, email: null }, expires_at: "1970-01-01T00:00:00Z" });
+              setSession({ user: { ...cached.profile, email: null }, expires_at: cached.expires_at ?? "1970-01-01T00:00:00Z" });
               setCatalog(cached.catalog); setState(cached.state);
               setCorridorId(cached.state.corridor_id);
               setSelectedId(cached.state.segments[0]?.segment_id ?? "");
@@ -312,9 +315,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-in">
           <div className="brand">
-            <span className="brand-mark" aria-hidden="true">
-              N
-            </span>
+            <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" />
             <strong>NER LENS</strong>
             <span className="sep">/</span>
             <span>{workspaces[workspace].name}</span>
@@ -353,6 +354,7 @@ export default function App() {
             setCatalog(null); setState(null);
             queryClient.clear();
             await clearOfflineContext();
+            await prepareDriverAccount(data.user.actor_id);
             setSession(data);
           }}
         />
@@ -387,7 +389,7 @@ export default function App() {
             {!adminOnly && <a href="#segments">Corridor conditions</a>}
             {workspace === "control" && <><a href="#operations:missions">Deliveries</a><a href="#operations:routes">Route planning</a><a href="#sources">Source connections</a></>}
             {workspace === "authority" && <>{!adminOnly && <><a href="#operations:reports">Evidence review</a><a href="#operations:status">Road decisions</a></>}{session.user.roles.includes("system_admin") && <a href="#administration">People & access</a>}{!adminOnly && <a href="#sources">Source connections</a>}</>}
-            {workspace === "field" && <>{session.user.roles.includes("field_reporter") && <a href="#field-reports">Field reports & offline queue</a>}{session.user.roles.includes("driver") && <a href="#route-alerts">Route alerts</a>}<a href="#operations:missions">Assigned missions</a></>}
+            {workspace === "field" && <>{session.user.roles.includes("field_reporter") && <a href="#field-reports">Field reports & offline queue</a>}{session.user.roles.includes("driver") && <><a href="#driver-missions">My deliveries & offline actions</a><a href="#route-alerts">Route alerts</a></>}{!draftOnly && <a href="#operations:missions">Live mission board</a>}</>}
             {!adminOnly && <a href="#user-stories">SIH user stories</a>}
           </nav>
           {error && (
@@ -434,7 +436,8 @@ export default function App() {
             )}
             {adminOnly && !draftOnly && corridorId && <Administration key={"admin-" + corridorId + session.user.actor_id} session={session} corridorId={corridorId} manageUsers />}
             {workspace === "field" && state && session.user.roles.includes("field_reporter") && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
-            {workspace === "field" && session.user.roles.includes("driver") && <RouteAlerts session={session} authenticated={!draftOnly} />}
+            {workspace === "field" && corridorId && session.user.roles.includes("driver") && <DriverMissions key={session.user.actor_id + corridorId} session={session} corridorId={corridorId} authenticated={!draftOnly} />}
+            {workspace === "field" && session.user.roles.includes("driver") && <RouteAlerts key={session.user.actor_id} session={session} authenticated={!draftOnly} />}
             {state && (
               <div className="rows">
                 <section className="brief-band" aria-label="Corridor brief">

@@ -5,7 +5,7 @@ export default defineConfig({
     registerType: "prompt",
     injectRegister: "script",
     manifest: { name: "NER LENS Control", short_name: "Control", description: "Delivery and corridor control", theme_color: "#f7f7f5", background_color: "#f7f7f5", display: "standalone", start_url: "/control/", icons: [{ src: "/control-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" }] },
-    workbox: { navigateFallbackDenylist: [/^\/v1(?:\/|$)/, /^\/health(?:\/|$)/], globPatterns: ["**/*.{js,css,html,svg,webmanifest}"], maximumFileSizeToCacheInBytes: 5000000, runtimeCaching: [] },
+    workbox: { navigateFallbackDenylist: [/^\/v1(?:\/|$)/, /^\/health(?:\/|$)/], globPatterns: ["**/*.{js,css,html,svg,webmanifest,woff,woff2}"], maximumFileSizeToCacheInBytes: 5000000, runtimeCaching: [] },
   })],
   server: {
     proxy: {

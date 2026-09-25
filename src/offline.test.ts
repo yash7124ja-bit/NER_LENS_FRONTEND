@@ -3,9 +3,108 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { ReportStore, savePhoto, saveReport, syncPhotos, syncReports, observationSchema, saveOfflineContext, loadOfflineContext, clearOfflineContext } from "./offline.ts";
 import { cacheRouteAlerts, cachedRouteAlerts, queueRouteAlertDecision, syncRouteAlertDecisions } from "./alertQueue.ts";
+import { cacheDriverMissions, cachedDriverMissions, prepareDriverAccount, queueDriverAction, syncDriverActions } from "./driverQueue.ts";
 import type { Session, Catalog, State } from "./api.ts";
 const observation = { segment_id: "authorized-segment", observed_at: "2026-09-01T00:00:00Z", geometry: { type: "Point" as const, coordinates: [92, 26] as [number, number] }, accuracy_m: 10, status_claim: "unknown" as const, condition_code: "obstruction", note: "Observed obstruction requiring review" };
 const acknowledgement = (body: { client_report_id: string }) => Response.json({ client_report_id: body.client_report_id, field_report_id: `server-${body.client_report_id}`, sync_state: "accepted_for_review" });
+const activeSession = () => new Date(Date.now() + 3600000).toISOString();
+test("driver mission actions survive restart and replay in order with the same idempotency keys", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const snapshot = { mission_id: "mission-1", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
+  await assert.rejects(queueDriverAction("bob", "mission-1", "accept", db));
+  await queueDriverAction("alice", "mission-1", "accept", db);
+  await queueDriverAction("alice", "mission-1", "start", db);
+  await queueDriverAction("alice", "mission-1", "declare-delivery", db);
+  const keys = (await cachedDriverMissions("alice", "corridor-1", db))[0].pending.map(item => item.idempotency_key);
+  db.close();
+  db = new ReportStore(name);
+  assert.deepEqual((await cachedDriverMissions("alice", "corridor-1", db))[0].pending.map(item => item.idempotency_key), keys);
+  assert.deepEqual(await cachedDriverMissions("bob", "corridor-1", db), []);
+  const seen: string[] = [];
+  let loseResponse = true;
+  const send: typeof fetch = async (url, init) => {
+    const action = String(url).split("/").at(-1)!;
+    seen.push(`${action}:${new Headers(init?.headers).get("Idempotency-Key")}`);
+    if (loseResponse) { loseResponse = false; throw Error("response lost after server commit"); }
+    return Response.json({ mission_id: "mission-1", state: { accept: "accepted", start: "active", "declare-delivery": "delivered" }[action], request_id: crypto.randomUUID() });
+  };
+  await syncDriverActions("alice", "corridor-1", db, send);
+  assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].pending[0].state, "retry_pending");
+  await syncDriverActions("alice", "corridor-1", db, send);
+  const saved = (await cachedDriverMissions("alice", "corridor-1", db))[0];
+  assert.equal(saved.state, "delivered");
+  assert.equal(saved.pending.length, 0);
+  assert.deepEqual(seen, [`accept:${keys[0]}`, `accept:${keys[0]}`, `start:${keys[1]}`, `declare-delivery:${keys[2]}`]);
+  await db.delete();
+});
+
+test("driver action conflicts stop later queued actions and expired trips cannot start", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const snapshot = { mission_id: "mission-2", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: null, vehicle_id: null };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
+  await queueDriverAction("alice", "mission-2", "accept", db);
+  await queueDriverAction("alice", "mission-2", "start", db);
+  let calls = 0;
+  await syncDriverActions("alice", "corridor-1", db, async () => { calls++; return new Response(null, { status: 409 }); });
+  assert.equal(calls, 1);
+  assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].pending[0].state, "conflict");
+  await assert.rejects(queueDriverAction("alice", "mission-2", "declare-delivery", db));
+  await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, mission_id: "mission-3", state: "accepted",
+    delivery_window: { end: new Date(Date.now() - 1000).toISOString() } }], activeSession(), db);
+  await assert.rejects(queueDriverAction("alice", "mission-3", "start", db), /delivery window/);
+  await db.delete();
+});
+test("expired session hides cached trip and blocks offline actions without dropping its retry key", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const snapshot = { mission_id: "mission-expiring", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
+  const queued = await queueDriverAction("alice", snapshot.mission_id, "accept", db);
+  await db.missions.update(queued.key, { expires_at: new Date(Date.now() - 1000).toISOString() });
+  assert.deepEqual(await cachedDriverMissions("alice", "corridor-1", db), []);
+  await assert.rejects(queueDriverAction("alice", snapshot.mission_id, "start", db), /expired/);
+  assert.equal((await db.missions.get(queued.key))?.pending[0].idempotency_key, queued.pending[0].idempotency_key);
+  await db.delete();
+});
+test("account switch clears old trip summaries but retains original-owner pending actions", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const snapshot = { mission_id: "mission-4", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
+  await prepareDriverAccount("alice", db);
+  await cacheDriverMissions("alice", "corridor-1", [snapshot, { ...snapshot, mission_id: "mission-5" }], activeSession(), db);
+  const queued = await queueDriverAction("alice", "mission-4", "accept", db);
+  await prepareDriverAccount("bob", db);
+  assert.deepEqual(await cachedDriverMissions("alice", "corridor-1", db), []);
+  assert.deepEqual(await cachedDriverMissions("bob", "corridor-1", db), []);
+  assert.equal(await db.missions.get("alice:mission-5"), undefined);
+  const retained = await db.missions.get("alice:mission-4");
+  assert.equal(retained?.cargo_class, "");
+  assert.equal(retained?.receiving_facility, null);
+  assert.equal(retained?.pending[0].idempotency_key, queued.pending[0].idempotency_key);
+  db.close();
+  db = new ReportStore(name);
+  await prepareDriverAccount("alice", db);
+  await syncDriverActions("alice", "corridor-1", db, async (_url, init) => {
+    assert.equal(new Headers(init?.headers).get("Idempotency-Key"), queued.pending[0].idempotency_key);
+    return Response.json({ mission_id: "mission-4", state: "accepted", request_id: "receipt-4" });
+  });
+  await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, state: "accepted" }], activeSession(), db);
+  assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].state, "accepted");
+  await db.delete();
+});
 test("route alert decision survives restart, stays with its owner, and retries the same key", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);
@@ -161,7 +260,7 @@ test("offline snapshot retains minimal last-account context; logout clears conte
   const restored = await loadOfflineContext(db);
   assert.equal(restored?.profile.actor_id, "alice");
   assert.equal("email" in restored!.profile, false);
-  assert.equal("expires_at" in restored!, false);
+  assert.equal(restored?.expires_at, alice.expires_at);
   const bob = { ...alice, user: { ...alice.user, actor_id: "bob", roles: ["regional_viewer"] } };
   await saveOfflineContext(bob, catalog, state, db);
   assert.equal(await db.contexts.count(), 1);
