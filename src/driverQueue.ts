@@ -22,10 +22,31 @@ function actionPath(missionId: string, action: DriverAction) {
   }
 }
 
-export async function cachedDriverMissions(owner: string, corridorId: string, db: ReportStore = reportStore) {
+async function ownerMissions(owner: string, corridorId: string, db: ReportStore) {
   return (await db.missions.where("owner").equals(owner).toArray())
-    .filter(mission => mission.corridor_id === corridorId)
+    .filter(mission => mission.corridor_id === corridorId);
+}
+
+export async function cachedDriverMissions(owner: string, corridorId: string, db: ReportStore = reportStore) {
+  return (await ownerMissions(owner, corridorId, db))
+    .filter(mission => mission.cargo_class)
     .sort((a, b) => a.delivery_window_end.localeCompare(b.delivery_window_end));
+}
+
+export async function prepareDriverAccount(owner: string, db: ReportStore = reportStore) {
+  if (!owner) throw new Error("Authenticated account is required");
+  await db.transaction("rw", db.settings, db.missions, async () => {
+    const previous = (await db.settings.get("driver_active_owner"))?.value;
+    if (previous !== owner) {
+      for (const mission of await db.missions.toArray()) {
+        if (mission.owner === owner) continue;
+        if (!mission.pending.length) await db.missions.delete(mission.key);
+        else await db.missions.update(mission.key, { state: "", cargo_class: "", priority: "",
+          delivery_window_end: "", receiving_facility: null, vehicle_id: null, saved_at: "" });
+      }
+    }
+    await db.settings.put({ key: "driver_active_owner", value: owner });
+  });
 }
 
 export async function cacheDriverMissions(owner: string, corridorId: string, received: MissionSnapshot[], db: ReportStore = reportStore) {
@@ -43,7 +64,7 @@ export async function cacheDriverMissions(owner: string, corridorId: string, rec
       delivery_window_end: mission.delivery_window.end, receiving_facility: mission.receiving_facility,
       vehicle_id: mission.vehicle_id, saved_at: new Date().toISOString(), pending: previous?.pending ?? [] });
   }
-  for (const stale of await cachedDriverMissions(owner, corridorId, db)) {
+  for (const stale of await ownerMissions(owner, corridorId, db)) {
     if (!seen.has(stale.key) && !stale.pending.length) await db.missions.delete(stale.key);
   }
   return cachedDriverMissions(owner, corridorId, db);
@@ -71,7 +92,7 @@ export async function queueDriverAction(owner: string, missionId: string, action
 }
 
 export async function syncDriverActions(owner: string, corridorId: string, db: ReportStore = reportStore, send: typeof fetch = fetch) {
-  for (const mission of await cachedDriverMissions(owner, corridorId, db)) {
+  for (const mission of await ownerMissions(owner, corridorId, db)) {
     while (mission.pending.length) {
       const item = mission.pending[0];
       if (item.state === "conflict") break;

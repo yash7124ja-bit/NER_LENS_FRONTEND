@@ -4,6 +4,7 @@ import Administration from "./Administration";
 import OfflineReports from "./OfflineReports";
 import RouteAlerts from "./RouteAlerts";
 import DriverMissions from "./DriverMissions";
+import { prepareDriverAccount } from "./driverQueue";
 import CorridorMap from "./CorridorMap";
 import { ArrowClockwise, ArrowRight, ArrowUpRight, MapTrifold } from "@phosphor-icons/react";
 import { permittedWorkspaces, workspaceFromPath, workspaces } from "./workspace";
@@ -127,6 +128,7 @@ export default function App() {
     request<Session>("/v1/auth/session", controller.signal)
       .then(async (data) => {
         await clearOfflineContext();
+        await prepareDriverAccount(data.user.actor_id);
         if (!controller.signal.aborted) setSession(data);
       })
       .catch(async (err) => {
@@ -354,6 +356,7 @@ export default function App() {
             setCatalog(null); setState(null);
             queryClient.clear();
             await clearOfflineContext();
+            await prepareDriverAccount(data.user.actor_id);
             setSession(data);
           }}
         />
@@ -435,8 +438,8 @@ export default function App() {
             )}
             {adminOnly && !draftOnly && corridorId && <Administration key={"admin-" + corridorId + session.user.actor_id} session={session} corridorId={corridorId} manageUsers />}
             {workspace === "field" && state && session.user.roles.includes("field_reporter") && <div id="field-reports"><OfflineReports session={session} segments={segments} authenticated={!draftOnly} /></div>}
-            {workspace === "field" && corridorId && session.user.roles.includes("driver") && <DriverMissions session={session} corridorId={corridorId} authenticated={!draftOnly} />}
-            {workspace === "field" && session.user.roles.includes("driver") && <RouteAlerts session={session} authenticated={!draftOnly} />}
+            {workspace === "field" && corridorId && session.user.roles.includes("driver") && <DriverMissions key={session.user.actor_id + corridorId} session={session} corridorId={corridorId} authenticated={!draftOnly} />}
+            {workspace === "field" && session.user.roles.includes("driver") && <RouteAlerts key={session.user.actor_id} session={session} authenticated={!draftOnly} />}
             {state && (
               <div className="rows">
                 <section className="brief-band" aria-label="Corridor brief">
