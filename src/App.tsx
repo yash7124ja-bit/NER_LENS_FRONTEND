@@ -138,7 +138,7 @@ export default function App() {
             if (cached && !controller.signal.aborted) {
               setDraftOnly(true);
               setSavedAt(cached.saved_at);
-              setSession({ user: { ...cached.profile, email: null }, expires_at: "1970-01-01T00:00:00Z" });
+              setSession({ user: { ...cached.profile, email: null }, expires_at: cached.expires_at ?? "1970-01-01T00:00:00Z" });
               setCatalog(cached.catalog); setState(cached.state);
               setCorridorId(cached.state.corridor_id);
               setSelectedId(cached.state.segments[0]?.segment_id ?? "");

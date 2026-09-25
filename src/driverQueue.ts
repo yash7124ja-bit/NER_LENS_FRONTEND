@@ -29,7 +29,7 @@ async function ownerMissions(owner: string, corridorId: string, db: ReportStore)
 
 export async function cachedDriverMissions(owner: string, corridorId: string, db: ReportStore = reportStore) {
   return (await ownerMissions(owner, corridorId, db))
-    .filter(mission => mission.cargo_class)
+    .filter(mission => mission.cargo_class && Date.parse(mission.expires_at) > Date.now())
     .sort((a, b) => a.delivery_window_end.localeCompare(b.delivery_window_end));
 }
 
@@ -49,8 +49,9 @@ export async function prepareDriverAccount(owner: string, db: ReportStore = repo
   });
 }
 
-export async function cacheDriverMissions(owner: string, corridorId: string, received: MissionSnapshot[], db: ReportStore = reportStore) {
+export async function cacheDriverMissions(owner: string, corridorId: string, received: MissionSnapshot[], expiresAt: string, db: ReportStore = reportStore) {
   if (!owner || !corridorId) throw new Error("Sign in and choose a corridor before loading missions");
+  if (!(Date.parse(expiresAt) > Date.now())) throw new Error("Sign in again before saving missions");
   const seen = new Set<string>();
   for (const mission of received) {
     if (!mission.mission_id || mission.corridor_id !== corridorId || mission.driver_actor_id !== owner ||
@@ -62,7 +63,7 @@ export async function cacheDriverMissions(owner: string, corridorId: string, rec
     await db.missions.put({ key, owner, mission_id: mission.mission_id, corridor_id: corridorId,
       state: mission.state, cargo_class: mission.cargo_class, priority: mission.priority,
       delivery_window_end: mission.delivery_window.end, receiving_facility: mission.receiving_facility,
-      vehicle_id: mission.vehicle_id, saved_at: new Date().toISOString(), pending: previous?.pending ?? [] });
+      vehicle_id: mission.vehicle_id, saved_at: new Date().toISOString(), expires_at: expiresAt, pending: previous?.pending ?? [] });
   }
   for (const stale of await ownerMissions(owner, corridorId, db)) {
     if (!seen.has(stale.key) && !stale.pending.length) await db.missions.delete(stale.key);
@@ -79,6 +80,7 @@ export async function queueDriverAction(owner: string, missionId: string, action
   return db.transaction("rw", db.missions, async () => {
     const mission = await db.missions.get(key);
     if (!mission || mission.owner !== owner) throw new Error("Mission is unavailable to this account");
+    if (!(Date.parse(mission.expires_at) > Date.now())) throw new Error("Saved mission has expired; reconnect and sign in again");
     if (mission.pending.some(item => item.state === "conflict" || item.state === "reauth_required"))
       throw new Error("Resolve the saved mission action before adding another");
     if (effectiveDriverState(mission) !== requiredState[action])

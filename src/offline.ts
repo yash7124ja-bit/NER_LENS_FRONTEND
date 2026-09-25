@@ -30,7 +30,7 @@ export type DriverAction = "accept" | "reject" | "start" | "declare-delivery";
 export type CachedDriverMission = {
   key: string; owner: string; mission_id: string; corridor_id: string; state: string;
   cargo_class: string; priority: string; delivery_window_end: string;
-  receiving_facility: string | null; vehicle_id: string | null; saved_at: string;
+  receiving_facility: string | null; vehicle_id: string | null; saved_at: string; expires_at: string;
   pending: { action: DriverAction; idempotency_key: string; state: "saved_on_device" | "retry_pending" | "reauth_required" | "conflict" }[];
 };
 export class ReportStore extends Dexie {
@@ -50,11 +50,11 @@ export class ReportStore extends Dexie {
   }
 }
 export const reportStore = new ReportStore();
-export type OfflineContext = { key: string; profile: Pick<Session["user"], "actor_id" | "display_name" | "roles" | "jurisdiction_ids">; catalog: Catalog; state: State; saved_at: string };
+export type OfflineContext = { key: string; profile: Pick<Session["user"], "actor_id" | "display_name" | "roles" | "jurisdiction_ids">; catalog: Catalog; state: State; saved_at: string; expires_at: string };
 export async function saveOfflineContext(session: Session, catalog: Catalog, state: State, db = reportStore) {
   const { actor_id, display_name, roles, jurisdiction_ids } = session.user;
   if (!catalog.corridors.some(corridor => corridor.corridor_id === state.corridor_id)) throw new Error("Snapshot does not belong to the loaded catalog");
-  await db.contexts.put({ key: "last", profile: { actor_id, display_name, roles, jurisdiction_ids }, catalog, state, saved_at: new Date().toISOString() });
+  await db.contexts.put({ key: "last", profile: { actor_id, display_name, roles, jurisdiction_ids }, catalog, state, saved_at: new Date().toISOString(), expires_at: session.expires_at });
 }
 export async function loadOfflineContext(db = reportStore) { return db.contexts.get("last"); }
 export async function clearOfflineContext(db = reportStore) { await db.contexts.clear(); }

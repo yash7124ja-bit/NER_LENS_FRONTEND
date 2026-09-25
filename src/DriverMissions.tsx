@@ -19,7 +19,7 @@ export default function DriverMissions({ session, corridorId, authenticated }: {
       const result = await request<{ missions: Parameters<typeof cacheDriverMissions>[2] }>(
         `/v1/missions?corridor_id=${encodeURIComponent(corridorId)}`,
       );
-      setMissions(await cacheDriverMissions(owner, corridorId, result.missions));
+      setMissions(await cacheDriverMissions(owner, corridorId, result.missions, session.expires_at));
       setError("");
     } catch (cause) {
       setMissions(await cachedDriverMissions(owner, corridorId));

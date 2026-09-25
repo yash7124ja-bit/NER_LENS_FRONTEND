@@ -7,6 +7,7 @@ import { cacheDriverMissions, cachedDriverMissions, prepareDriverAccount, queueD
 import type { Session, Catalog, State } from "./api.ts";
 const observation = { segment_id: "authorized-segment", observed_at: "2026-09-01T00:00:00Z", geometry: { type: "Point" as const, coordinates: [92, 26] as [number, number] }, accuracy_m: 10, status_claim: "unknown" as const, condition_code: "obstruction", note: "Observed obstruction requiring review" };
 const acknowledgement = (body: { client_report_id: string }) => Response.json({ client_report_id: body.client_report_id, field_report_id: `server-${body.client_report_id}`, sync_state: "accepted_for_review" });
+const activeSession = () => new Date(Date.now() + 3600000).toISOString();
 test("driver mission actions survive restart and replay in order with the same idempotency keys", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);
@@ -14,7 +15,7 @@ test("driver mission actions survive restart and replay in order with the same i
     state: "planned", cargo_class: "medicine", priority: "high",
     delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
     receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
-  await cacheDriverMissions("alice", "corridor-1", [snapshot], db);
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
   await assert.rejects(queueDriverAction("bob", "mission-1", "accept", db));
   await queueDriverAction("alice", "mission-1", "accept", db);
   await queueDriverAction("alice", "mission-1", "start", db);
@@ -48,7 +49,7 @@ test("driver action conflicts stop later queued actions and expired trips cannot
     state: "planned", cargo_class: "medicine", priority: "high",
     delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
     receiving_facility: null, vehicle_id: null };
-  await cacheDriverMissions("alice", "corridor-1", [snapshot], db);
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
   await queueDriverAction("alice", "mission-2", "accept", db);
   await queueDriverAction("alice", "mission-2", "start", db);
   let calls = 0;
@@ -57,8 +58,22 @@ test("driver action conflicts stop later queued actions and expired trips cannot
   assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].pending[0].state, "conflict");
   await assert.rejects(queueDriverAction("alice", "mission-2", "declare-delivery", db));
   await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, mission_id: "mission-3", state: "accepted",
-    delivery_window: { end: new Date(Date.now() - 1000).toISOString() } }], db);
+    delivery_window: { end: new Date(Date.now() - 1000).toISOString() } }], activeSession(), db);
   await assert.rejects(queueDriverAction("alice", "mission-3", "start", db), /delivery window/);
+  await db.delete();
+});
+test("expired session hides cached trip and blocks offline actions without dropping its retry key", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const snapshot = { mission_id: "mission-expiring", corridor_id: "corridor-1", driver_actor_id: "alice",
+    state: "planned", cargo_class: "medicine", priority: "high",
+    delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
+    receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
+  await cacheDriverMissions("alice", "corridor-1", [snapshot], activeSession(), db);
+  const queued = await queueDriverAction("alice", snapshot.mission_id, "accept", db);
+  await db.missions.update(queued.key, { expires_at: new Date(Date.now() - 1000).toISOString() });
+  assert.deepEqual(await cachedDriverMissions("alice", "corridor-1", db), []);
+  await assert.rejects(queueDriverAction("alice", snapshot.mission_id, "start", db), /expired/);
+  assert.equal((await db.missions.get(queued.key))?.pending[0].idempotency_key, queued.pending[0].idempotency_key);
   await db.delete();
 });
 test("account switch clears old trip summaries but retains original-owner pending actions", async () => {
@@ -69,7 +84,7 @@ test("account switch clears old trip summaries but retains original-owner pendin
     delivery_window: { end: new Date(Date.now() + 600000).toISOString() },
     receiving_facility: "Clinic", vehicle_id: "vehicle-1" };
   await prepareDriverAccount("alice", db);
-  await cacheDriverMissions("alice", "corridor-1", [snapshot, { ...snapshot, mission_id: "mission-5" }], db);
+  await cacheDriverMissions("alice", "corridor-1", [snapshot, { ...snapshot, mission_id: "mission-5" }], activeSession(), db);
   const queued = await queueDriverAction("alice", "mission-4", "accept", db);
   await prepareDriverAccount("bob", db);
   assert.deepEqual(await cachedDriverMissions("alice", "corridor-1", db), []);
@@ -86,7 +101,7 @@ test("account switch clears old trip summaries but retains original-owner pendin
     assert.equal(new Headers(init?.headers).get("Idempotency-Key"), queued.pending[0].idempotency_key);
     return Response.json({ mission_id: "mission-4", state: "accepted", request_id: "receipt-4" });
   });
-  await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, state: "accepted" }], db);
+  await cacheDriverMissions("alice", "corridor-1", [{ ...snapshot, state: "accepted" }], activeSession(), db);
   assert.equal((await cachedDriverMissions("alice", "corridor-1", db))[0].state, "accepted");
   await db.delete();
 });
@@ -245,7 +260,7 @@ test("offline snapshot retains minimal last-account context; logout clears conte
   const restored = await loadOfflineContext(db);
   assert.equal(restored?.profile.actor_id, "alice");
   assert.equal("email" in restored!.profile, false);
-  assert.equal("expires_at" in restored!, false);
+  assert.equal(restored?.expires_at, alice.expires_at);
   const bob = { ...alice, user: { ...alice.user, actor_id: "bob", roles: ["regional_viewer"] } };
   await saveOfflineContext(bob, catalog, state, db);
   assert.equal(await db.contexts.count(), 1);
