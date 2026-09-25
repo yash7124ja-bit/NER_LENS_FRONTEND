@@ -6,7 +6,9 @@ import "./workflows.css";
 
 type Capability = { allowed: boolean; reason: string };
 type Report = { field_report_id: string; observed_at: string; status_claim: string; note: string; review_state: string };
-type Mission = { mission_id: string; cargo_class: string; priority: string; state: string; deadline_state: string; delivery_window: { end: string }; last_fix_age_seconds: number | null };
+type Mission = { mission_id: string; cargo_class: string; priority: string; state: string; deadline_state: string; delivery_window: { end: string }; vehicle_profile: string; vehicle_id: string | null; driver_actor_id: string | null; receiving_facility: string | null; receiving_contact?: string | null; last_fix_age_seconds: number | null };
+type Vehicle = { vehicle_id: string; alias: string; profile: string };
+type Assignee = { actor_id: string; display_name: string };
 type Comparison = { blocking_constraints: {segment_id: string; reason: string}[]; warnings: string[]; provider: string; retrieved_at: string; mode: string; routes: { route_id: string; reason: string; score_components: { travel_minutes: number } }[] };
 const readable = (s: string) => s.replaceAll("_", " ");
 const date = (s: string) => new Date(s).toLocaleString();
@@ -18,11 +20,16 @@ export default function Workflows({ session, corridor, segments, onChange, works
   const [tab, setTab] = useState(() => tabs.includes(window.location.hash.split(":")[1]) ? window.location.hash.split(":")[1] : tabs[0]);
   useEffect(() => {const change=()=>{const value=window.location.hash.split(":")[1]; if(tabs.includes(value))setTab(value);};
     window.addEventListener("hashchange",change); return()=>window.removeEventListener("hashchange",change);},[]);
-  const [capabilities, setCapabilities] = useState<Record<string, Capability>>({});
+  const [capabilities, setCapabilities] = useState<Record<string, Capability> | null>(null);
   const [segmentId, setSegmentId] = useState(segments[0]?.segment_id ?? "");
   const [reports, setReports] = useState<Report[]>([]);
-  const [assignees, setAssignees] = useState<{actor_id: string; display_name: string}[]>([]);
+  const [assignees, setAssignees] = useState<Assignee[]>([]);
+  const [drivers, setDrivers] = useState<Assignee[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [vehicleProfile, setVehicleProfile] = useState("light_goods");
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
   const [missions, setMissions] = useState<Mission[]>([]);
+  const [missionDetail, setMissionDetail] = useState<Mission | null>(null);
   const [evidence, setEvidence] = useState("");
   const [comparison, setComparison] = useState<Comparison | null>(null);
   const [message, setMessage] = useState("");
@@ -30,18 +37,24 @@ export default function Workflows({ session, corridor, segments, onChange, works
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const pending = useRef(new Map<string, {key: string; body: Record<string, unknown>}>());
-  const allowed = (action: string) => capabilities[action]?.allowed === true;
+  const allowed = (action: string) => capabilities?.[action]?.allowed === true;
   const canReports = allowed("review_evidence") || allowed("create_field_report") || allowed("publish_status");
+  useEffect(() => { setMissionDetail(null); setVehicles([]); setDrivers([]); setSelectedVehicleId(""); }, [corridor.corridor_id, session.user.actor_id]);
   useEffect(() => {
     const controller = new AbortController();
+    setCapabilities(null);
     request<{ actions: Record<string, Capability> }>(`/v1/corridors/${corridor.corridor_id}/capabilities`, controller.signal)
       .then(r => setCapabilities(r.actions)).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     return () => controller.abort();
   }, [corridor.corridor_id, session.user.actor_id]);
   useEffect(() => {
     const controller = new AbortController();
-    if (allowed("create_mission")) request<{actors: {actor_id: string; display_name: string}[]}>(`/v1/mission-assignees?corridor_id=${encodeURIComponent(corridor.corridor_id)}`, controller.signal)
-      .then(r => setAssignees(r.actors)).catch(e => { if (!controller.signal.aborted) setError(e.message); });
+    if (allowed("create_mission")) {
+      request<{actors: Assignee[]; drivers: Assignee[]}>(`/v1/mission-assignees?corridor_id=${encodeURIComponent(corridor.corridor_id)}`, controller.signal)
+        .then(r => { setAssignees(r.actors); setDrivers(r.drivers); }).catch(e => { if (!controller.signal.aborted) setError(e.message); });
+      request<{vehicles: Vehicle[]}>(`/v1/vehicles?corridor_id=${encodeURIComponent(corridor.corridor_id)}`, controller.signal)
+        .then(r => setVehicles(r.vehicles)).catch(e => { if (!controller.signal.aborted) setError(e.message); });
+    }
     if (canReports && segmentId) request<{ reports: Report[] }>(`/v1/field-reports?segment_id=${encodeURIComponent(segmentId)}`, controller.signal)
       .then(r => setReports(r.reports)).catch(e => { if (!controller.signal.aborted) setError(e.message); });
     if (allowed("view_mission") || allowed("submit_gps")) request<{ missions: Mission[] }>(`/v1/missions?corridor_id=${encodeURIComponent(corridor.corridor_id)}`, controller.signal)
@@ -80,7 +93,7 @@ export default function Workflows({ session, corridor, segments, onChange, works
   }
   const chooseSegment = <label>Road segment<select value={segmentId} onChange={e => { setSegmentId(e.target.value); setEvidence(""); setReports([]); }}>
     {segments.map(s => <option key={s.segment_id} value={s.segment_id}>{segmentName(s)}</option>)}</select></label>;
-  const gate = (role: string, description: string) => <div className="access-note"><strong>{role} access required</strong><p>{description}</p><p>Signed in as {session.user.display_name}: {session.user.roles.map(readable).join(", ")}. An administrator must assign the role for this corridor.</p></div>;
+  const gate = (role: string, description: string) => !capabilities ? <p className="help" role="status">Checking workspace permissions…</p> : <div className="access-note"><strong>{role} access required</strong><p>{description}</p><p>Signed in as {session.user.display_name}: {session.user.roles.map(readable).join(", ")}. An administrator must assign the role for this corridor.</p></div>;
   function submitMission(event: FormEvent<HTMLFormElement>, routeOnly: boolean) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -95,7 +108,9 @@ export default function Workflows({ session, corridor, segments, onChange, works
         graph_version_id: corridor.graph_version, vehicle_profile: data.get("vehicle"), departure_at: start, deadline_at: end, alternative_limit: 3 }));
       else await mutate("/v1/missions", { ...points, corridor_id: corridor.corridor_id, cargo_class: data.get("cargo"),
         priority: data.get("priority"), vehicle_profile: data.get("vehicle"), delivery_window: { start, end },
-        gps_consent: { basis: "explicit_consent", recorded_at: start }, assigned_actor_ids: data.getAll("assignees"), route_id: null });
+        vehicle_id: data.get("vehicle_id") || null, driver_actor_id: data.get("driver_actor_id") || null,
+        receiving_facility: data.get("facility"), receiving_contact: data.get("contact"),
+        gps_consent: { basis: "mission_assignment", recorded_at: start }, assigned_actor_ids: data.getAll("assignees"), route_id: null });
     }, routeOnly ? "Route comparison saved. Read its limitations before planning." : "Mission saved. Start it from the mission board when ready.");
   }
   const planForm = (routeOnly: boolean) => <form className="workflow-form" onSubmit={e => submitMission(e, routeOnly)}>
@@ -103,9 +118,12 @@ export default function Workflows({ session, corridor, segments, onChange, works
     <div className="form-grid">
       <label>Origin band<select name="origin" required>{segments.map(s => <option key={s.segment_id} value={s.segment_id}>{segmentName(s)}</option>)}</select></label>
       <label>Destination band<select name="destination" required defaultValue={segments.at(-1)?.segment_id}>{segments.map(s => <option key={s.segment_id} value={s.segment_id}>{segmentName(s)}</option>)}</select></label>
-      <label>Vehicle profile<select name="vehicle"><option value="light_goods">Light goods vehicle</option><option value="rigid_truck">Rigid truck</option><option value="emergency">Emergency vehicle</option></select></label>
+      <label>Vehicle profile<select name="vehicle" value={vehicleProfile} onChange={e=>{setVehicleProfile(e.target.value);setSelectedVehicleId("");}}><option value="light_goods">Light goods vehicle</option><option value="rigid_truck">Rigid truck</option><option value="emergency">Emergency vehicle</option></select></label>
       <label>Delivery deadline<input name="deadline" type="datetime-local" required /></label>
-      {!routeOnly && <><label>Cargo<input name="cargo" placeholder="e.g. essential medicines" required maxLength={128} /></label><label>Priority<select name="priority"><option value="routine">Routine</option><option value="high">High</option><option value="emergency">Emergency</option></select></label></>}
+      {!routeOnly && <><label>Cargo<input name="cargo" placeholder="e.g. essential medicines" required maxLength={128} /></label><label>Priority<select name="priority"><option value="routine">Routine</option><option value="high">High</option><option value="emergency">Emergency</option></select></label>
+        <label>Receiving facility<input name="facility" required maxLength={255} placeholder="Facility or receiving unit" /></label><label>Receiving contact<input name="contact" required maxLength={255} placeholder="Authorized desk or contact" /></label>
+        <label>Registered vehicle<select name="vehicle_id" value={selectedVehicleId} onChange={e=>setSelectedVehicleId(e.target.value)}><option value="">Assign later</option>{vehicles.filter(v=>v.profile===vehicleProfile).map(v=><option key={v.vehicle_id} value={v.vehicle_id}>{v.alias}</option>)}</select></label>
+        <label>Driver<select name="driver_actor_id" disabled={!selectedVehicleId}><option value="">Assign later</option>{drivers.map(d=><option key={d.actor_id} value={d.actor_id}>{d.display_name}</option>)}</select></label></>}
     </div>
     {!routeOnly && <label>Assigned field reporters<select name="assignees" multiple>{assignees.map(a => <option key={a.actor_id} value={a.actor_id}>{a.display_name}</option>)}</select><span>{assignees.length ? "Select reporters who have agreed to this assignment." : "No field reporters provisioned in this corridor. A dispatcher can still manage the delivery without GPS."}</span></label>}
     {!routeOnly && <label className="consent"><input type="checkbox" required /> I have consent to create this mission. GPS is not collected by creating it.</label>}
@@ -125,7 +143,7 @@ export default function Workflows({ session, corridor, segments, onChange, works
       {tab === "routes" && <><h3>Compare a baseline route</h3><p className="help">Travel-time baseline only. Vehicle legality, hazard coverage, and routing policy are not verified; no safe-route recommendation is issued.</p>{!allowed("compare_routes") ? gate("Dispatcher", "Dispatchers can request and save route comparisons for this corridor.") : planForm(true)}{comparison && <div className="route-result"><p>Provider: {comparison.provider} · Retrieved {date(comparison.retrieved_at)}</p><span className="status-tag">{readable(comparison.mode)}</span>{comparison.blocking_constraints.map((b,i)=><p key={i} className="notice">Excluded: {segments.find(s=>s.segment_id===b.segment_id) ? segmentName(segments.find(s=>s.segment_id===b.segment_id)!) : b.segment_id} — {readable(b.reason)}</p>)}{comparison.routes.length === 0 ? <p>No verified feasible candidate was returned. Do not interpret this as road clearance.</p> : comparison.routes.map(r => <article key={r.route_id}><strong>{Math.round(r.score_components.travel_minutes)} min baseline</strong><p>{r.reason}</p></article>)}</div>}</>}
       {tab === "missions" && <><div className="workflow-heading"><div><h3>Medicine mission board</h3><p>Plan a delivery, start it, and record completion. ETA remains unavailable without a verified route.</p></div><button disabled={busy} onClick={() => setRevision(r => r + 1)}>Refresh board</button></div>
         {allowed("create_mission") ? <details><summary>Create a delivery mission</summary>{planForm(false)}</details> : workspace === "field" ? <p className="help">Dispatchers create missions. Your assigned missions appear below when available.</p> : gate("Dispatcher", "A dispatcher role is required to create delivery missions in this corridor.")}
-        {(allowed("view_mission") || allowed("submit_gps")) && <>{!missions.length && <div className="workflow-empty"><strong>No missions assigned to this account</strong><p>{workspace === "field" ? "Ask the dispatcher to assign you to a delivery." : "Create a mission or ask the dispatcher to assign you to an existing delivery."}</p></div>}{missions.map(m => <article className="mission-row" key={m.mission_id}><div><span className="status-tag">{m.state}</span><h4>{m.cargo_class}</h4><p>{readable(m.priority)} priority · Due {date(m.delivery_window.end)}</p><small>{readable(m.deadline_state)} · {m.last_fix_age_seconds === null ? "No GPS fix received" : `Last GPS fix ${Math.round(m.last_fix_age_seconds / 60)} min ago`}</small></div><div>{m.state === "planned" && <button disabled={busy} onClick={() => void act(() => mutate(`/v1/missions/${m.mission_id}/start`), "Mission started.")}>Start mission</button>}{m.state === "active" && allowed("submit_gps") && <button disabled={busy} onClick={() => void capturePosition(m)}>Share current location once</button>}{m.state === "active" && <button disabled={busy} onClick={() => void act(() => mutate(`/v1/missions/${m.mission_id}/complete`), "Delivery completion recorded.")}>Mark delivered</button>}</div></article>)}</>}
+        {(allowed("view_mission") || allowed("submit_gps")) && <>{!missions.length && <div className="workflow-empty"><strong>No missions assigned to this account</strong><p>{workspace === "field" ? "Ask the dispatcher to assign you to a delivery." : "Create a mission or ask the dispatcher to assign you to an existing delivery."}</p></div>}{missions.map(m => <article className="mission-row" key={m.mission_id}><div><span className="status-tag">{m.state}</span><h4>{m.cargo_class}</h4><p>{readable(m.priority)} priority · Due {date(m.delivery_window.end)}</p><p>Receiving: {m.receiving_facility || "not recorded"} · Vehicle: {vehicles.find(v=>v.vehicle_id===m.vehicle_id)?.alias || "assignment pending"} · Driver: {drivers.find(d=>d.actor_id===m.driver_actor_id)?.display_name || "assignment pending"}</p><small>{readable(m.deadline_state)} · {m.last_fix_age_seconds === null ? "No GPS fix received" : `Last GPS fix ${Math.round(m.last_fix_age_seconds / 60)} min ago`}</small>{workspace === "control" && <p><button disabled={busy} onClick={() => void request<Mission>(`/v1/missions/${m.mission_id}`).then(setMissionDetail).catch(e=>setError(e.message))}>View receiving details</button></p>}{missionDetail?.mission_id===m.mission_id && <p>Receiving contact: {missionDetail.receiving_contact || "not recorded"}</p>}</div><div>{m.state === "planned" && <button disabled={busy} onClick={() => void act(() => mutate(`/v1/missions/${m.mission_id}/start`), "Mission started.")}>Start mission</button>}{m.state === "active" && allowed("submit_gps") && <button disabled={busy} onClick={() => void capturePosition(m)}>Share current location once</button>}{m.state === "active" && <button disabled={busy} onClick={() => void act(() => mutate(`/v1/missions/${m.mission_id}/complete`), "Delivery completion recorded.")}>Mark delivered</button>}</div></article>)}</>}
       </>}
     </div>
   </section>;
