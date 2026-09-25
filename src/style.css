@@ -94,15 +94,10 @@ a {
   color: var(--muted);
 }
 .brand-mark {
-  background: #292923;
-  color: white;
   width: 25px;
   height: 25px;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  font-weight: 700;
-  font-size: 15px;
+  display: block;
+  flex: none;
 }
 .sep {
   padding: 0 4px;
@@ -813,7 +808,7 @@ tbody tr.selected-row {
 .topbar-in { padding-top: 14px; padding-bottom: 12px; }
 .brand { margin-right: auto; }
 .brand strong { font-size: 19px; letter-spacing: -.045em; }
-.brand-mark { background: #e6eadf; color: #4a6040; width: 31px; height: 31px; border-radius: 7px; }
+.brand-mark { width: 31px; height: 31px; }
 .tools button { display: inline-flex; align-items: center; gap: 6px; }
 .environment-label { border: 1px solid #dbdbd6; border-radius: 4px; padding: 5px 7px; color: var(--muted); font: 10px "IBM Plex Mono", monospace; white-space: nowrap; }
 .topbar-nav { max-width: 1400px; margin: auto; padding: 0 28px; display: flex; gap: 25px; overflow-x: auto; }

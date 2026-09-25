@@ -315,9 +315,7 @@ export default function App() {
       <header className="topbar">
         <div className="topbar-in">
           <div className="brand">
-            <span className="brand-mark" aria-hidden="true">
-              N
-            </span>
+            <img className="brand-mark" src="/icon.svg" alt="" aria-hidden="true" />
             <strong>NER LENS</strong>
             <span className="sep">/</span>
             <span>{workspaces[workspace].name}</span>
