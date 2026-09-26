@@ -14,6 +14,7 @@ import { Session, CachedRouteAlert } from '../types';
 import { getCachedAlerts, saveCachedAlerts } from '../services/storage';
 import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
+import { reconcileAlerts } from '../services/alertCache';
 import { t } from '../services/i18n';
 import { 
   AlertTriangle, 
@@ -47,7 +48,7 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
       setAlerts(cached);
       try {
         const fetched = await ApiClient.fetchAlerts(owner);
-        const merged = fetched.map(a => cached.find(item => item.alert_id === a.alert_id && item.pending_decision) || a);
+        const merged = reconcileAlerts(fetched, cached);
         await saveCachedAlerts(owner, merged);
         setAlerts(merged);
         setLoadError('');

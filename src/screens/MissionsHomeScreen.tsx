@@ -14,6 +14,8 @@ import { CachedMission, Session, CachedRouteAlert } from '../types';
 import { getCachedMissions, saveCachedMissions, getCachedAlerts, saveCachedAlerts } from '../services/storage';
 import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
+import { reconcileAlerts } from '../services/alertCache';
+import { reconcileMissions } from '../services/missionCache';
 import { t } from '../services/i18n';
 import { 
   Truck, 
@@ -57,14 +59,11 @@ export const MissionsHomeScreen: React.FC<Props> = ({
       setAlerts(cachedAlerts);
       try {
         const fetched = await ApiClient.fetchAssignedMissions(owner);
-        const merged = fetched.map(m => {
-          const previous = cached.find(item => item.mission_id === m.mission_id);
-          return previous?.pending.length ? { ...m, state: previous.state, pending: previous.pending } : m;
-        });
+        const merged = reconcileMissions(fetched, cached);
         await saveCachedMissions(owner, merged);
         setMissions(merged);
         const fetchedAlerts = await ApiClient.fetchAlerts(owner);
-        const mergedAlerts = fetchedAlerts.map(a => cachedAlerts.find(item => item.alert_id === a.alert_id && item.pending_decision) || a);
+        const mergedAlerts = reconcileAlerts(fetchedAlerts, cachedAlerts);
         await saveCachedAlerts(owner, mergedAlerts);
         setAlerts(mergedAlerts);
         setLoadError(null);
