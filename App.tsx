@@ -92,7 +92,7 @@ function MainNavigator() {
         <StatusBar barStyle="light-content" backgroundColor={Colors.govtNavy} />
         <ActivityIndicator size="large" color={Colors.primary} />
         <Text style={styles.splashTitle}>NER LENS</Text>
-        <Text style={styles.splashText}>GOVERNMENT OF INDIA · CORRIDOR LOGISTICS</Text>
+        <Text style={styles.splashText}>SIH 2026 · CORRIDOR LOGISTICS DEMO</Text>
       </View>
     );
   }

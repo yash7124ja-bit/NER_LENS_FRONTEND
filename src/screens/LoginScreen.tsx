@@ -15,7 +15,7 @@ import { Colors, Spacing, Typography, TouchTargets } from '../theme';
 import { ApiClient } from '../services/api';
 import { saveSession } from '../services/storage';
 import { Session } from '../types';
-import { Truck, ShieldCheck, KeyRound, Server } from 'lucide-react-native';
+import { Truck, KeyRound, Server } from 'lucide-react-native';
 import { t } from '../services/i18n';
 
 interface Props {
@@ -54,14 +54,14 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Govt of India Strip */}
+        {/* SIH demo strip */}
         <View style={styles.govtHeaderBanner}>
           <View style={styles.tricolorStripe}>
             <View style={[styles.tricolorBand, { backgroundColor: '#FF9933' }]} />
             <View style={[styles.tricolorBand, { backgroundColor: '#FFFFFF' }]} />
             <View style={[styles.tricolorBand, { backgroundColor: '#138808' }]} />
           </View>
-          <Text style={styles.govtHeaderText}>GOVERNMENT OF INDIA · BHARAT CORRIDOR LOGISTICS</Text>
+          <Text style={styles.govtHeaderText}>SIH 2026 · NORTHEAST CORRIDOR LOGISTICS DEMO</Text>
         </View>
 
         {/* Brand Header */}
@@ -132,6 +132,7 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
           <Server size={14} color={Colors.textMuted} />
           <Text style={styles.securityNoteText}>{t('offlineModeNotice')}</Text>
         </View>
+        <Text style={styles.securityNoteText}>Developed by Team NER-LENS</Text>
       </ScrollView>
     </KeyboardAvoidingView>
   );

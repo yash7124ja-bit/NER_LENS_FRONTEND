@@ -3,25 +3,27 @@ import { View, Text, StyleSheet, TouchableOpacity, StatusBar } from 'react-nativ
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BrandLogo } from './BrandLogo';
 import { Colors, Spacing, Typography } from '../theme';
-import { Radio, RefreshCw, ShieldAlert } from 'lucide-react-native';
+import { RefreshCw, ShieldAlert } from 'lucide-react-native';
+import { useNetInfo } from '@react-native-community/netinfo';
 
 interface Props {
   driverName?: string;
   driverId?: string;
   pendingCount?: number;
-  isOnline?: boolean;
   onSyncPress?: () => void;
   onSosPress?: () => void;
 }
 
 export const HeaderBar: React.FC<Props> = ({
-  driverName = 'Driver DRV-042',
+  driverName = 'Signed-in operator',
   pendingCount = 0,
-  isOnline = true,
   onSyncPress,
   onSosPress,
 }) => {
   const insets = useSafeAreaInsets();
+  const network = useNetInfo();
+  const networkLabel = network.isConnected === true ? 'NETWORK AVAILABLE'
+    : network.isConnected === false ? 'OFFLINE' : 'NETWORK CHECKING';
   const topPadding = Math.max(insets.top, StatusBar.currentHeight || 0) + 8;
 
   return (
@@ -34,7 +36,7 @@ export const HeaderBar: React.FC<Props> = ({
             <View style={styles.brandTitleRow}>
               <Text style={styles.brandTitle}>NER LENS</Text>
               <View style={styles.govTag}>
-                <Text style={styles.govTagText}>GOVT OF INDIA</Text>
+                <Text style={styles.govTagText}>SIH DEMO</Text>
               </View>
             </View>
             <Text style={styles.corridorBadge}>NORTHEAST CORRIDOR LOGISTICS PORTAL</Text>
@@ -48,19 +50,13 @@ export const HeaderBar: React.FC<Props> = ({
             activeOpacity={0.85}
           >
             <ShieldAlert size={16} color="#FFFFFF" />
-            <Text style={styles.sosQuickText}>SOS</Text>
+            <Text style={styles.sosQuickText}>112 HELP</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {/* Telemetry Status Strip */}
       <View style={styles.statusStrip}>
-        {/* GPS Telemetry Pill */}
-        <View style={styles.chipGps}>
-          <Radio size={12} color="#86EFAC" />
-          <Text style={styles.chipGpsText}>GPS LOCKED (NH-29)</Text>
-        </View>
-
         {/* Sync / Offline Status Pill */}
         <TouchableOpacity 
           style={[styles.chipSync, pendingCount > 0 && styles.chipSyncAmber]}
@@ -69,7 +65,7 @@ export const HeaderBar: React.FC<Props> = ({
         >
           <RefreshCw size={12} color={pendingCount > 0 ? '#FDE68A' : '#93C5FD'} />
           <Text style={[styles.chipSyncText, pendingCount > 0 && styles.chipSyncAmberText]}>
-            {pendingCount > 0 ? `QUEUE: ${pendingCount} SAVED` : (isOnline ? 'CLOUD CONNECTED' : 'OFFLINE MODE')}
+            {pendingCount > 0 ? `QUEUE: ${pendingCount} · ${networkLabel}` : networkLabel}
           </Text>
         </TouchableOpacity>
 

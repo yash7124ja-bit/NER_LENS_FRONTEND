@@ -12,10 +12,7 @@ export const translations = {
     emailLabel: 'Email / Driver ID',
     passwordLabel: 'Password',
     signInButton: 'Sign In to Vehicle Console',
-    quickPresets: 'Quick Test Accounts:',
-    driverRehan: 'Driver Rehan (DRV-042, Dimapur-Kohima)',
-    driverAo: 'Driver T. Ao (Field Dual-Role)',
-    offlineModeNotice: 'Working in offline / disconnected mode with local cryptographic verification.',
+    offlineModeNotice: 'Sign-in requires a connection. Saved trip data remains available after a recent sign-in.',
     
     // Mission Statuses
     planned: 'PLANNED',
@@ -33,8 +30,7 @@ export const translations = {
     reportIncident: 'Report Incident',
     myRoutes: 'My Routes',
     offlineReports: 'Offline Outbox',
-    emergencySOS: 'EMERGENCY SOS',
-    preTripCheck: 'Pre-Trip Inspection',
+    emergencySOS: 'EMERGENCY HELP',
     
     // Telemetry & Corridor
     currentMission: 'Current Assigned Mission',
@@ -46,8 +42,6 @@ export const translations = {
     altitude: 'Current Altitude',
     speed: 'Current Speed',
     speedCap: 'Mountain Speed Cap',
-    weighbridgeNext: 'Medziphema Weighbridge',
-    checkpointClearance: 'Auto-Clearance Stamped',
     
     // Hazards
     landslideRisk: 'LANDSLIDE HAZARD',
@@ -97,10 +91,7 @@ export const translations = {
     emailLabel: 'ইমেইল / চালক আইডি',
     passwordLabel: 'পাছৱৰ্ড',
     signInButton: 'বাহন কনচোলত প্ৰৱেশ কৰক',
-    quickPresets: 'দ্ৰুত পৰীক্ষামূলক একাউন্ট:',
-    driverRehan: 'চালক ৰেহান (DRV-042, ডিমাপুৰ-কোহিমা)',
-    driverAo: 'চালক টি. আও (দ্বৈত ভূমিকা)',
-    offlineModeNotice: 'ইন্টাৰনেট অবিহনে অফলাইন অৱস্থাত কাম কৰি থকা হৈছে।',
+    offlineModeNotice: 'Sign-in requires a connection. Saved trip data remains available after a recent sign-in.',
     
     // Mission Statuses
     planned: 'পৰিকল্পিত',
@@ -118,8 +109,7 @@ export const translations = {
     reportIncident: 'ঘটনা প্ৰতিবেদন দিয়ক',
     myRoutes: 'মোৰ পথসমূহ',
     offlineReports: 'অফলাইন আউটবক্স',
-    emergencySOS: 'আপদকালীন SOS',
-    preTripCheck: 'যাত্ৰাৰ পূৰ্বৰ পৰীক্ষা',
+    emergencySOS: 'জৰুৰী সহায়',
     
     // Telemetry & Corridor
     currentMission: 'বৰ্তমানৰ নিৰ্দিষ্ট মিছন',
@@ -131,8 +121,6 @@ export const translations = {
     altitude: 'উচ্চতা',
     speed: 'বৰ্তমান গতি',
     speedCap: 'পাহাৰীয়া গতিসীমা',
-    weighbridgeNext: 'মেদজিফেমা ওজন কঁটা',
-    checkpointClearance: 'অনুমোদিত স্টাম্প',
     
     // Hazards
     landslideRisk: 'ভূমিস্খলনৰ আশংকা',
