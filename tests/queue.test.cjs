@@ -52,3 +52,26 @@ test('a failed replay keeps actions, alert decisions, reports and GPS points on 
   assert.equal(state.gps.length, 1);
   assert.equal(await manager.getPendingCount('driver'), 4);
 });
+
+test('photo reports stay pending through upload failure and clear only after server media completion', async () => {
+  const state = { missions: [], alerts: [], gps: [], reports: [{
+    client_report_id: 'f1', owner: 'reporter', photo_uris: ['file://photo.jpg'], sync_state: 'saved_on_device'
+  }] };
+  let uploads = 0;
+  const manager = queue(state, {
+    submitFieldReport: async () => ({ field_report_id: 'server-f1' }),
+    uploadReportMedia: async (_, __, slot) => {
+      assert.equal(slot, 0);
+      if (++uploads === 1) throw new Error('Scanner unavailable');
+    },
+    fetchReportMediaState: async () => 'complete',
+  });
+  await manager.syncAll('reporter');
+  assert.equal(state.reports[0].server_report_id, 'server-f1');
+  assert.equal(state.reports[0].sync_state, 'media_pending');
+  assert.equal(await manager.getPendingCount('reporter'), 1);
+  await manager.syncAll('reporter');
+  assert.deepEqual(Array.from(state.reports[0].uploaded_photo_slots), [0]);
+  assert.equal(state.reports[0].sync_state, 'acknowledged');
+  assert.equal(await manager.getPendingCount('reporter'), 0);
+});

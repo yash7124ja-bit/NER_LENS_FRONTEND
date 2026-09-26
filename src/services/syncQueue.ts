@@ -22,6 +22,7 @@ import { ApiClient } from './api';
 
 export class SyncQueueManager {
   private static isSyncing = false;
+  private static resyncOwner: string | null = null;
   private static listeners: Array<(status: { isSyncing: boolean; pendingCount: number }) => void> = [];
 
   static subscribe(listener: (status: { isSyncing: boolean; pendingCount: number }) => void) {
@@ -131,7 +132,10 @@ export class SyncQueueManager {
 
   // Sequential Dependency Replay
   static async syncAll(owner: string): Promise<void> {
-    if (this.isSyncing) return;
+    if (this.isSyncing) {
+      this.resyncOwner = owner;
+      return;
+    }
     const netState = await NetInfo.fetch();
     if (!netState.isConnected) {
       console.log('[SyncQueue] Offline: records securely preserved locally.');
@@ -218,21 +222,37 @@ export class SyncQueueManager {
 
       // 3. Replay Field Reports
       const reports = await getFieldReports(owner);
-      let reportsModified = false;
       for (const report of reports) {
         if (report.sync_state === 'saved_on_device') {
           try {
             report.sync_state = 'sending';
-            await ApiClient.submitFieldReport(report);
-            report.sync_state = 'acknowledged';
-            reportsModified = true;
+            const receipt = await ApiClient.submitFieldReport(report);
+            report.server_report_id = receipt.field_report_id;
+            report.sync_state = report.photo_uris.length ? 'media_pending' : 'acknowledged';
+            await saveFieldReports(owner, reports);
           } catch {
             report.sync_state = 'saved_on_device';
+            await saveFieldReports(owner, reports);
           }
         }
-      }
-      if (reportsModified) {
-        await saveFieldReports(owner, reports);
+        if (report.sync_state === 'media_pending' && report.server_report_id) {
+          try {
+            report.uploaded_photo_slots ||= [];
+            for (const [index, uri] of report.photo_uris.entries()) {
+              const slot = index;
+              if (report.uploaded_photo_slots.includes(slot)) continue;
+              await ApiClient.uploadReportMedia(report.server_report_id, report.client_report_id, slot, uri);
+              report.uploaded_photo_slots.push(slot);
+              await saveFieldReports(owner, reports);
+            }
+            if (await ApiClient.fetchReportMediaState(report.server_report_id) === 'complete') {
+              report.sync_state = 'acknowledged';
+              await saveFieldReports(owner, reports);
+            }
+          } catch (error) {
+            console.error('[SyncQueue] Media remains pending:', error);
+          }
+        }
       }
 
       // 4. Replay GPS Batches
@@ -261,13 +281,9 @@ export class SyncQueueManager {
       this.isSyncing = false;
       const count = await this.getPendingCount(owner);
       this.notify(false, count);
+      const resyncOwner = this.resyncOwner;
+      this.resyncOwner = null;
+      if (resyncOwner) void this.syncAll(resyncOwner);
     }
   }
 }
-
-// Global network listener to automatically trigger sync on connection restored
-NetInfo.addEventListener(state => {
-  if (state.isConnected) {
-    console.log('[NetInfo] Network connected. Syncing active queues...');
-  }
-});

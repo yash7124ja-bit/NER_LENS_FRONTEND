@@ -183,5 +183,4 @@ export async function clearCurrentAccountCache(owner: string): Promise<void> {
   await AsyncStorage.removeItem(`${KEYS.MISSIONS_PREFIX}${owner}`);
   await AsyncStorage.removeItem(`${KEYS.ALERTS_PREFIX}${owner}`);
   await AsyncStorage.removeItem(`${KEYS.REPORT_SEGMENTS_PREFIX}${owner}`);
-  await AsyncStorage.removeItem(KEYS.SESSION);
 }

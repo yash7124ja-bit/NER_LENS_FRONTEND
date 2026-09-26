@@ -9,9 +9,10 @@ import {
 } from 'react-native';
 import { HeaderBar } from '../components/HeaderBar';
 import { Colors, Spacing, Typography, TouchTargets } from '../theme';
-import { Session, LanguageCode } from '../types';
-import { clearCurrentAccountCache, getSettings, saveSettings } from '../services/storage';
+import { Session, LanguageCode, CachedMission } from '../types';
+import { clearCurrentAccountCache, getCachedMissions, getSettings, saveSettings } from '../services/storage';
 import { setLanguage, getLanguage, t } from '../services/i18n';
+import { SyncQueueManager } from '../services/syncQueue';
 import { 
   User, 
   Truck, 
@@ -21,7 +22,6 @@ import {
   Trash2, 
   LogOut, 
   Check, 
-  ShieldCheck 
 } from 'lucide-react-native';
 
 interface Props {
@@ -39,14 +39,17 @@ export const ProfileSettingsScreen: React.FC<Props> = ({
 }) => {
   const [lang, setLang] = useState<LanguageCode>(getLanguage());
   const [serverUrl, setServerUrl] = useState('https://ner-lens.yash7124ja.workers.dev/v1');
+  const [assignedMission, setAssignedMission] = useState<CachedMission | null>(null);
 
   useEffect(() => {
     (async () => {
       const s = await getSettings();
       setLang(s.language);
       setServerUrl(s.serverUrl);
+      const missions = await getCachedMissions(session.user.actor_id);
+      setAssignedMission(missions.find(m => m.state === 'active') || missions[0] || null);
     })();
-  }, []);
+  }, [session.user.actor_id]);
 
   const handleLanguageChange = async (newLang: LanguageCode) => {
     setLang(newLang);
@@ -56,6 +59,10 @@ export const ProfileSettingsScreen: React.FC<Props> = ({
   };
 
   const handleClearCache = async () => {
+    if (await SyncQueueManager.getPendingCount(session.user.actor_id)) {
+      Alert.alert('Pending work on device', 'Sync or resolve queued mission actions and alert decisions before clearing the trip cache.');
+      return;
+    }
     Alert.alert(
       'Purge Device Cache',
       'This will erase local copies of missions and alerts for this account, leaving server authority intact.',
@@ -85,7 +92,7 @@ export const ProfileSettingsScreen: React.FC<Props> = ({
         <View style={styles.ribbon}>
           <Text style={styles.title}>DRIVER CONSOLE & SETTINGS</Text>
           <Text style={styles.subtitle}>
-            Official logistics identity, vehicle clearance profile, and offline sync control.
+            Account identity, saved mission assignment, and offline outbox control.
           </Text>
         </View>
 
@@ -115,7 +122,7 @@ export const ProfileSettingsScreen: React.FC<Props> = ({
           <View style={styles.specRow}>
             <Radio size={18} color={Colors.primary} />
             <Text style={styles.specLabel}>Local Queue Status:</Text>
-            <Text style={[styles.specValue, { color: Colors.success }]}>Online & Armed</Text>
+            <Text style={styles.specValue}>Inspect outbox for pending work</Text>
           </View>
           {onOpenOutbox && (
             <TouchableOpacity 
@@ -128,23 +135,18 @@ export const ProfileSettingsScreen: React.FC<Props> = ({
           )}
         </View>
 
-        {/* VEHICLE TELEMETRY PROFILE */}
-        <Text style={styles.sectionHeader}>ASSIGNED VEHICLE SPECIFICATIONS</Text>
+        {/* Assignment from the latest saved server mission. */}
+        <Text style={styles.sectionHeader}>SAVED VEHICLE ASSIGNMENT</Text>
         <View style={styles.card}>
           <View style={styles.specRow}>
             <Truck size={18} color={Colors.primary} />
             <Text style={styles.specLabel}>Assigned Unit:</Text>
-            <Text style={styles.specValue}>NL-07-EA-3892</Text>
+            <Text style={styles.specValue}>{assignedMission?.vehicle_id || 'No vehicle assignment saved'}</Text>
           </View>
           <View style={styles.specRow}>
-            <ShieldCheck size={18} color={Colors.success} />
+            <Truck size={18} color={Colors.primary} />
             <Text style={styles.specLabel}>Category:</Text>
-            <Text style={styles.specValue}>5T Heavy Utility (Cold Chain)</Text>
-          </View>
-          <View style={styles.specRow}>
-            <Radio size={18} color={Colors.warning} />
-            <Text style={styles.specLabel}>Clearance Profile:</Text>
-            <Text style={styles.specValue}>3.4m Width · 3.8m Height</Text>
+            <Text style={styles.specValue}>{assignedMission?.vehicle_type || 'Vehicle type unavailable'}</Text>
           </View>
         </View>
 

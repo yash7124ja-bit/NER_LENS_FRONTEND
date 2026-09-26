@@ -99,7 +99,7 @@ export class ApiClient {
     });
   }
 
-  static submitFieldReport(report: FieldReport): Promise<unknown> {
+  static submitFieldReport(report: FieldReport): Promise<{ field_report_id: string }> {
     const status_claim = report.condition === 'impassable' ? 'blocked' : 'restricted';
     return request('/field-reports', {
       method: 'POST', headers: { 'Idempotency-Key': report.client_report_id },
@@ -110,6 +110,33 @@ export class ApiClient {
         status_claim, condition_code: report.incident_type, note: report.note, device_id: report.device_id,
       }),
     });
+  }
+
+  static async uploadReportMedia(reportId: string, clientReportId: string, slot: number, uri: string): Promise<void> {
+    const { File } = await import('expo-file-system');
+    const { fetch: uploadFetch } = await import('expo/fetch');
+    const Crypto = await import('expo-crypto');
+    const file = new File(uri);
+    const bytes = await file.bytes();
+    if (!bytes.length || bytes.length > 8 * 1024 * 1024) throw new Error('Photo is empty or exceeds the 8 MB upload limit');
+    const mime = bytes[0] === 0xff && bytes[1] === 0xd8 ? 'image/jpeg'
+      : bytes[0] === 0x89 && bytes[1] === 0x50 ? 'image/png'
+      : String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' ? 'image/webp' : null;
+    if (!mime) throw new Error('Photo format is not supported by the server');
+    const hash = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+    const sha256 = Array.from(new Uint8Array(hash)).map(n => n.toString(16).padStart(2, '0')).join('');
+    const { serverUrl } = await getSettings();
+    const response = await uploadFetch(`${serverUrl.replace(/\/$/, '')}/field-reports/${encodeURIComponent(reportId)}/media/${slot}`, {
+      method: 'PUT', credentials: 'include', body: file,
+      headers: { 'Idempotency-Key': `${clientReportId}-${slot}`, 'X-Media-SHA256': sha256,
+        'Content-Type': mime, 'Content-Length': String(bytes.length) },
+    });
+    if (!response.ok) throw new Error(`Photo upload rejected (${response.status})`);
+  }
+
+  static async fetchReportMediaState(reportId: string): Promise<string> {
+    const data = await request<{ media_state: string }>(`/field-reports/${encodeURIComponent(reportId)}/media`);
+    return data.media_state;
   }
 
   static async sendGpsBatch(missionId: string, deviceId: string, sequenceStart: number, points: PositionPoint[]): Promise<unknown> {

@@ -14,6 +14,8 @@ import { Session } from './src/types';
 import { getSession, saveSession, getSettings } from './src/services/storage';
 import { setLanguage, t } from './src/services/i18n';
 import { ApiClient } from './src/services/api';
+import { SyncQueueManager } from './src/services/syncQueue';
+import NetInfo from '@react-native-community/netinfo';
 
 // Screens
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -23,7 +25,6 @@ import { RiskAlertsScreen } from './src/screens/RiskAlertsScreen';
 import { FieldReportScreen } from './src/screens/FieldReportScreen';
 import { SyncOutboxScreen } from './src/screens/SyncOutboxScreen';
 import { ProfileSettingsScreen } from './src/screens/ProfileSettingsScreen';
-import { PreTripCheckModal } from './src/screens/PreTripCheckModal';
 import { EmergencySOSModal } from './src/screens/EmergencySOSModal';
 
 // Icons
@@ -39,7 +40,6 @@ function MainNavigator() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'home' | 'trip' | 'alerts' | 'reports' | 'sync' | 'profile'>('home');
-  const [showPreTripModal, setShowPreTripModal] = useState(false);
   const [showSosModal, setShowSosModal] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -69,6 +69,15 @@ function MainNavigator() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!session) return;
+    const owner = session.user.actor_id;
+    void SyncQueueManager.syncAll(owner);
+    return NetInfo.addEventListener(state => {
+      if (state.isConnected) void SyncQueueManager.syncAll(owner);
+    });
+  }, [session]);
 
   const handleLogout = async () => {
     try { await ApiClient.logout(); } catch { /* Clear the local view even without a connection. */ }
@@ -107,7 +116,6 @@ function MainNavigator() {
           <MissionsHomeScreen 
             session={session}
             onNavigateTab={tab => setActiveTab(tab as any)}
-            onOpenPreTripCheck={() => setShowPreTripModal(true)}
             onOpenSos={() => setShowSosModal(true)}
           />
         )}
@@ -208,14 +216,6 @@ function MainNavigator() {
       </View>
 
       {/* MODALS */}
-      <PreTripCheckModal 
-        visible={showPreTripModal}
-        onClose={() => setShowPreTripModal(false)}
-        onConfirm={() => {
-          setShowPreTripModal(false);
-        }}
-      />
-
       <EmergencySOSModal 
         visible={showSosModal}
         onClose={() => setShowSosModal(false)}

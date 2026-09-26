@@ -27,21 +27,18 @@ import {
   ArrowRight, 
   Mountain, 
   Gauge, 
-  FileCheck2,
   MapPin
 } from 'lucide-react-native';
 
 interface Props {
   session: Session;
   onNavigateTab: (tabName: string) => void;
-  onOpenPreTripCheck: () => void;
   onOpenSos: () => void;
 }
 
 export const MissionsHomeScreen: React.FC<Props> = ({ 
   session, 
   onNavigateTab, 
-  onOpenPreTripCheck, 
   onOpenSos 
 }) => {
   const owner = session.user.actor_id;
@@ -122,7 +119,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
         {/* Welcome Driver Ribbon */}
         <View style={styles.driverRibbon}>
           <View>
-            <Text style={styles.driverGreeting}>Active Mountain Shift</Text>
+            <Text style={styles.driverGreeting}>Assigned missions</Text>
             <Text style={styles.driverName}>{session.user.display_name}</Text>
           </View>
           <View style={styles.shiftBadge}>
@@ -178,41 +175,6 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                 </Text>
               </View>
 
-              {/* Glanceable Telemetry HUD Grid */}
-              <View style={styles.telemetryGrid}>
-                <View style={styles.telemetryCell}>
-                  <Clock size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>—</Text>
-                  <Text style={styles.telemetryLabel}>ETA UNAVAILABLE</Text>
-                </View>
-                <View style={styles.telemetryCell}>
-                  <Navigation size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>—</Text>
-                  <Text style={styles.telemetryLabel}>DISTANCE UNAVAILABLE</Text>
-                </View>
-                <View style={styles.telemetryCell}>
-                  <Mountain size={16} color={Colors.warning} />
-                  <Text style={styles.telemetryValue}>—</Text>
-                  <Text style={styles.telemetryLabel}>ALTITUDE UNAVAILABLE</Text>
-                </View>
-                <View style={styles.telemetryCell}>
-                  <Gauge size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>—</Text>
-                  <Text style={styles.telemetryLabel}>SPEED UNAVAILABLE</Text>
-                </View>
-              </View>
-
-              {/* Milestone Progress Bar */}
-              <View style={styles.milestoneBox}>
-                <View style={styles.milestoneRow}>
-                  <Text style={styles.milestoneActive}>{activeMission.from_location || 'Origin'}</Text>
-                  <Text style={styles.milestonePending}>{activeMission.to_location || 'Destination'}</Text>
-                </View>
-                <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: activeMission.state === 'delivered' ? '100%' : '0%' }]} />
-                </View>
-              </View>
-
               {/* Mission Actions */}
               <View style={styles.actionRow}>
                 {activeMission.state === 'planned' && (
@@ -236,13 +198,6 @@ export const MissionsHomeScreen: React.FC<Props> = ({
 
                 {activeMission.state === 'accepted' && (
                   <>
-                    <TouchableOpacity 
-                      style={[styles.btnAction, styles.btnOutline]}
-                      onPress={onOpenPreTripCheck}
-                    >
-                      <FileCheck2 size={16} color={Colors.primary} />
-                      <Text style={styles.btnOutlineText}>{t('preTripCheck')}</Text>
-                    </TouchableOpacity>
                     <TouchableOpacity 
                       style={[styles.btnAction, styles.btnPrimary]}
                       onPress={() => handleAction(activeMission.mission_id, 'start')}
@@ -277,14 +232,14 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                   <View style={styles.deliveredNotice}>
                     <CheckCircle2 size={18} color={Colors.success} />
                     <Text style={styles.deliveredNoticeText}>
-                      Delivery declared on device. Dispatcher confirmation pending.
+                      {activeMission.pending.length ? 'Delivery saved on device. Dispatcher confirmation pending.' : 'Delivery declaration received by server.'}
                     </Text>
                   </View>
                 )}
               </View>
             </View>
 
-            {/* LIVE HAZARD WARNING FEED (NH-29) */}
+            {/* Server alert feed */}
             {criticalAlert && (
               <TouchableOpacity 
                 style={styles.hazardCard}
@@ -294,7 +249,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                 <View style={styles.hazardHeader}>
                   <AlertTriangle size={18} color={Colors.danger} />
                   <Text style={styles.hazardTitle}>
-                    {criticalAlert.severity === 'critical' ? t('landslideRisk') : 'CORRIDOR ALERT'}
+                    CORRIDOR ALERT
                   </Text>
                   {criticalAlert.distance_ahead_km !== undefined && <Text style={styles.hazardDist}>{criticalAlert.distance_ahead_km} km Ahead</Text>}
                 </View>
@@ -311,7 +266,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
             <Text style={styles.sectionHeader}>TACTICAL CONTROLS</Text>
             <View style={styles.quickGrid}>
               {/* Report Incident */}
-              <TouchableOpacity 
+              {session.user.roles.includes('field_reporter') && <TouchableOpacity
                 style={styles.gridCard}
                 onPress={() => onNavigateTab('reports')}
                 activeOpacity={0.7}
@@ -321,7 +276,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                 </View>
                 <Text style={styles.gridLabel}>{t('reportIncident')}</Text>
                 <Text style={styles.gridSub}>Photo & Geo-tag</Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
 
               {/* My Routes / Detour */}
               <TouchableOpacity 
@@ -359,19 +314,8 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                   <ShieldAlert size={24} color={Colors.danger} />
                 </View>
                 <Text style={[styles.gridLabel, { color: '#FFFFFF' }]}>{t('emergencySOS')}</Text>
-                <Text style={[styles.gridSub, { color: '#FFE0DD' }]}>BRO & Police 112</Text>
+                <Text style={[styles.gridSub, { color: '#FFE0DD' }]}>Open 112 dialer</Text>
               </TouchableOpacity>
-            </View>
-
-            {/* CHECKPOINT WIDGET */}
-            <View style={styles.checkpointCard}>
-              <View style={styles.checkpointHeader}>
-                <FileCheck2 size={16} color={Colors.primary} />
-                <Text style={styles.checkpointTitle}>{t('weighbridgeNext')} (in 8.4 km)</Text>
-              </View>
-              <Text style={styles.checkpointText}>
-                5T Gross limit compliance verified at Chumukedima gate. {t('checkpointClearance')}.
-              </Text>
             </View>
           </>
         ) : (

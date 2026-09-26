@@ -13,12 +13,13 @@ import {
 import { HeaderBar } from '../components/HeaderBar';
 import { Colors, Spacing, Typography, TouchTargets } from '../theme';
 import { Session, FieldReport, IncidentType, ReportSegment } from '../types';
-import { getFieldReports, getCachedMissions, getReportSegments, saveReportSegments } from '../services/storage';
+import { getFieldReports, getCachedMissions, getDeviceId, getReportSegments, saveReportSegments } from '../services/storage';
 import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
 import * as Location from 'expo-location';
+import { File, Paths } from 'expo-file-system';
 import { 
   Camera, 
   MapPin, 
@@ -49,7 +50,7 @@ const INCIDENT_TYPES: { id: IncidentType; label: string; icon: string }[] = [
 
 export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onOpenSos }) => {
   const owner = session.user.actor_id;
-  const isReporter = session.user.roles.includes('field_reporter') || session.user.roles.includes('driver');
+  const isReporter = session.user.roles.includes('field_reporter');
 
   const [incidentType, setIncidentType] = useState<IncidentType>('landslide');
   const [condition, setCondition] = useState<FieldReport['condition']>('impassable');
@@ -73,6 +74,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
 
   useEffect(() => {
     void Promise.resolve().then(loadReports);
+    const unsubscribe = SyncQueueManager.subscribe(() => { void loadReports(); });
     (async () => {
       const cached = await getReportSegments(owner);
       setSegments(cached);
@@ -99,6 +101,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
         setLocationNotice('Location unavailable. Retry after enabling device location.');
       }
     })();
+    return unsubscribe;
   }, [owner]);
 
   const handlePickImage = async () => {
@@ -157,8 +160,14 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
 
     setSubmitting(true);
     try {
+      const reportId = Crypto.randomUUID();
+      const savedPhotos = photos.map((uri, index) => {
+        const target = new File(Paths.document, `${reportId}-${index + 1}.jpg`);
+        new File(uri).copy(target);
+        return target.uri;
+      });
       const newReport: FieldReport = {
-        client_report_id: Crypto.randomUUID(),
+        client_report_id: reportId,
         owner,
         mission_id: undefined,
         sequence: reports.length + 1,
@@ -169,8 +178,8 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
         incident_type: incidentType,
         condition,
         note: note.trim(),
-        device_id: `device-${Crypto.randomUUID().slice(0, 8)}`,
-        photo_uris: photos,
+        device_id: await getDeviceId(),
+        photo_uris: savedPhotos,
         sync_state: 'saved_on_device',
         created_at: new Date().toISOString(),
       };
@@ -357,7 +366,9 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
                     <Clock size={12} color={Colors.warning} />
                   )}
                   <Text style={styles.syncBadgeText}>
-                    {rep.sync_state === 'acknowledged' ? (rep.photo_uris.length ? 'REPORT SENT · PHOTOS LOCAL' : 'REPORT SENT FOR REVIEW') : 'SAVED ON DEVICE'}
+                    {rep.sync_state === 'acknowledged' ? 'RECEIVED FOR REVIEW'
+                      : rep.sync_state === 'media_pending' ? 'REPORT SENT · MEDIA PENDING'
+                        : 'SAVED ON DEVICE'}
                   </Text>
                 </View>
               </View>
