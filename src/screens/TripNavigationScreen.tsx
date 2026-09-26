@@ -1,32 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  Switch, 
-  Modal 
-} from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, Switch } from 'react-native';
+import * as Location from 'expo-location';
+import Svg, { Polyline } from 'react-native-svg';
 import { HeaderBar } from '../components/HeaderBar';
-import { Colors, Spacing, Typography, TouchTargets } from '../theme';
-import { Session, Waypoint } from '../types';
+import { Colors, Spacing } from '../theme';
+import type { Session, CachedMission, RouteSelection } from '../types';
+import { getCachedMissions, getCachedRoute, saveCachedRoute, getDeviceId, nextGpsSequence } from '../services/storage';
+import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
-import Svg, { Path, Circle, Line, Text as SvgText, Rect, G } from 'react-native-svg';
-import { 
-  AlertTriangle, 
-  Layers, 
-  MapPin, 
-  Navigation, 
-  Compass, 
-  Mountain, 
-  Gauge, 
-  Radio, 
-  X, 
-  CheckCircle2, 
-  Clock 
-} from 'lucide-react-native';
-import { t } from '../services/i18n';
+import { AlertTriangle, Navigation, RefreshCw } from 'lucide-react-native';
 
 interface Props {
   session: Session;
@@ -34,543 +16,158 @@ interface Props {
   onOpenSos: () => void;
 }
 
-const NH29_WAYPOINTS: Waypoint[] = [
-  { id: 'wp-1', name: 'Dimapur Medical Depot', km_mark: 0.0, status: 'passed' },
-  { id: 'wp-2', name: 'Chumukedima Foothill Gate', km_mark: 18.2, status: 'passed' },
-  { id: 'wp-3', name: 'Pagla Pahar (Debris Hazard)', km_mark: 34.2, status: 'current', hazard: 'Landslide Risk < 15km/h' },
-  { id: 'wp-4', name: 'Medziphema Weighbridge', km_mark: 48.0, status: 'upcoming', is_checkpoint: true },
-  { id: 'wp-5', name: 'Dzüdza River Bridge', km_mark: 60.5, status: 'upcoming', hazard: 'Single-Lane Transit' },
-  { id: 'wp-6', name: 'Kohima Bypass & Naga Hospital', km_mark: 74.0, status: 'upcoming' },
-];
+function routePoints(coordinates: [number, number][]): string {
+  if (coordinates.length < 2) return '';
+  const lng = coordinates.map(c => c[0]);
+  const lat = coordinates.map(c => c[1]);
+  const minX = Math.min(...lng), maxX = Math.max(...lng);
+  const minY = Math.min(...lat), maxY = Math.max(...lat);
+  return coordinates.map(([x, y]) =>
+    `${20 + 300 * (x - minX) / (maxX - minX || 1)},${200 - 180 * (y - minY) / (maxY - minY || 1)}`,
+  ).join(' ');
+}
 
 export const TripNavigationScreen: React.FC<Props> = ({ session, onNavigateTab, onOpenSos }) => {
-  const [gpsSharing, setGpsSharing] = useState(true);
-  const [pendingCount, setPendingCount] = useState(0);
-  const [showLayers, setShowLayers] = useState(false);
-  const [layerHazards, setLayerHazards] = useState(true);
-  const [layerWeather, setLayerWeather] = useState(true);
-  const [layerFieldReports, setLayerFieldReports] = useState(true);
-  const [layerAlternatives, setLayerAlternatives] = useState(false);
+  const owner = session.user.actor_id;
+  const [mission, setMission] = useState<CachedMission | null>(null);
+  const [selection, setSelection] = useState<RouteSelection | null>(null);
+  const [notice, setNotice] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [checkedAt, setCheckedAt] = useState(() => Date.now());
+  const [gpsSharing, setGpsSharing] = useState(false);
+  const [gpsNotice, setGpsNotice] = useState('Foreground location sharing is off.');
+  const subscription = useRef<Location.LocationSubscription | null>(null);
+  const pendingPosition = useRef(Promise.resolve());
 
-  useEffect(() => {
-    const unsub = SyncQueueManager.subscribe(status => {
-      setPendingCount(status.pendingCount);
-    });
-    return unsub;
-  }, []);
+  const load = async () => {
+    try {
+      const missions = await getCachedMissions(owner);
+      const selected = missions.find(m => m.state === 'active') || missions[0];
+      setMission(selected || null);
+      if (!selected) {
+        setNotice('No assigned mission is saved. Open Missions while online to load assignments.');
+        return;
+      }
+      setSelection(await getCachedRoute(owner, selected.mission_id));
+      try {
+        const current = await ApiClient.fetchRouteSelection(selected.mission_id);
+        setCheckedAt(Date.now());
+        setSelection(current);
+        if (current) await saveCachedRoute(owner, selected.mission_id, current);
+        setNotice(current ? '' : 'No approved planning baseline is selected for this mission.');
+      } catch {
+        setNotice('Offline or route service unavailable. Any saved baseline may be stale.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  return (
-    <View style={styles.container}>
-      <HeaderBar 
-        driverName={session.user.display_name}
-        pendingCount={pendingCount}
-        onSyncPress={() => onNavigateTab('sync')}
-        onSosPress={onOpenSos}
-      />
+  useEffect(() => { void load(); }, [owner]);
+  useEffect(() => () => subscription.current?.remove(), []);
 
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* MANDATORY PLANNING BASELINE DISCLAIMER (SOW Requirement) */}
-        <View style={styles.disclaimerBanner}>
-          <AlertTriangle size={18} color={Colors.warning} />
-          <View style={styles.disclaimerTextGroup}>
-            <Text style={styles.disclaimerTitle}>{t('baselineWarning')}</Text>
-            <Text style={styles.disclaimerText}>{t('baselineDisclaimer')}</Text>
-          </View>
-        </View>
+  const setSharing = async (enabled: boolean) => {
+    if (!enabled) {
+      subscription.current?.remove();
+      subscription.current = null;
+      setGpsSharing(false);
+      setGpsNotice('Location sharing stopped. Saved positions remain in the outbox.');
+      return;
+    }
+    if (!mission || mission.state !== 'active') {
+      setGpsNotice('Start an assigned mission before sharing location.');
+      return;
+    }
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== 'granted') {
+        setGpsNotice('Location permission denied. No positions are being collected.');
+        return;
+      }
+      const deviceId = await getDeviceId();
+      subscription.current = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 25 },
+        fix => {
+          if (fix.coords.accuracy === null) return;
+          pendingPosition.current = pendingPosition.current.then(async () => {
+            const sequence = await nextGpsSequence(owner, mission.mission_id);
+            await SyncQueueManager.queueGpsBatch(owner, mission.mission_id, [{
+              sequence, captured_at: new Date(fix.timestamp).toISOString(),
+              coordinates: [fix.coords.longitude, fix.coords.latitude],
+              accuracy_m: fix.coords.accuracy!,
+              ...(fix.coords.speed !== null && fix.coords.speed >= 0 ? { speed_mps: fix.coords.speed } : {}),
+              ...(fix.coords.heading !== null && fix.coords.heading >= 0 ? { heading_deg: fix.coords.heading } : {}),
+            }]);
+          }).catch(() => setGpsNotice('Unable to save a location fix. Check device storage.'));
+        },
+        () => setGpsNotice('Location provider stopped. Turn sharing off and retry.'),
+      );
+      setGpsSharing(true);
+      setGpsNotice(`Foreground sharing on for device ${deviceId.slice(0, 8)}. Positions queue locally before server receipt.`);
+    } catch {
+      setGpsNotice('Location tracking could not start. Check permission and device settings.');
+    }
+  };
 
-        {/* MAP & HUD TELEMETRY CANVAS */}
-        <View style={styles.mapCard}>
-          <View style={styles.mapToolbar}>
-            <View style={styles.mapHeaderInfo}>
-              <Text style={styles.mapTitle}>NH-29 MOUNTAIN CORRIDOR</Text>
-              <Text style={styles.mapSub}>Dimapur (Km 0) → Kohima (Km 74)</Text>
-            </View>
-
-            <TouchableOpacity 
-              style={styles.layerBtn} 
-              onPress={() => setShowLayers(true)}
-              activeOpacity={0.8}
-            >
-              <Layers size={16} color={Colors.primary} />
-              <Text style={styles.layerBtnText}>Layers</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* HIGH-CONTRAST VECTOR MOUNTAIN ROAD HUD */}
-          <View style={styles.canvasContainer}>
-            <Svg width="100%" height={220} viewBox="0 0 340 220">
-              {/* Background mountain terrain mesh contours */}
-              <Path d="M 0 160 Q 90 90 180 150 T 340 100 L 340 220 L 0 220 Z" fill="#0E1724" opacity={0.6} />
-              <Path d="M 0 130 Q 120 70 240 120 T 340 70 L 340 220 L 0 220 Z" fill="#0A111A" opacity={0.4} />
-
-              {/* Alternative Route B (Dashed Niuland Pass) */}
-              {layerAlternatives && (
-                <Path 
-                  d="M 30 190 Q 70 120 160 80 T 310 30" 
-                  stroke={Colors.warning} 
-                  strokeWidth={3} 
-                  strokeDasharray="6, 6" 
-                  fill="none" 
-                />
-              )}
-
-              {/* Main NH-29 Mountain Highway Polyline */}
-              <Path 
-                d="M 30 190 Q 80 170 110 140 T 170 110 T 230 70 T 310 30" 
-                stroke="#1E293B" 
-                strokeWidth={14} 
-                strokeLinecap="round" 
-                fill="none" 
-              />
-              <Path 
-                d="M 30 190 Q 80 170 110 140 T 170 110 T 230 70 T 310 30" 
-                stroke={Colors.primary} 
-                strokeWidth={5} 
-                strokeLinecap="round" 
-                fill="none" 
-              />
-
-              {/* Waypoint 1: Dimapur Origin */}
-              <Circle cx={30} cy={190} r={6} fill={Colors.success} />
-              <SvgText x={25} y={210} fill={Colors.textSecondary} fontSize={10} fontWeight="700">Dimapur</SvgText>
-
-              {/* Active Truck Position (Km 31.9 - before Pagla Pahar) */}
-              <Circle cx={100} cy={148} r={16} fill="rgba(0, 229, 188, 0.2)" />
-              <Circle cx={100} cy={148} r={8} fill={Colors.primaryBright} stroke="#0C141F" strokeWidth={2} />
-              <SvgText x={85} y={135} fill={Colors.primaryBright} fontSize={10} fontWeight="900">YOU (NL-07)</SvgText>
-
-              {/* Hazard: Landslide Risk Zone (Km 34 Pagla Pahar) */}
-              {layerHazards && (
-                <G>
-                  <Circle cx={125} cy={135} r={14} fill="rgba(239, 68, 68, 0.25)" />
-                  <Circle cx={125} cy={135} r={6} fill={Colors.danger} />
-                  <SvgText x={140} y={138} fill={Colors.dangerBright} fontSize={9} fontWeight="700">Landslide Risk (Km 34)</SvgText>
-                </G>
-              )}
-
-              {/* Waypoint 4: Medziphema Weighbridge */}
-              <Rect x={164} y={104} width={12} height={12} rx={2} fill={Colors.warning} />
-              <SvgText x={180} y={112} fill={Colors.textSecondary} fontSize={9} fontWeight="600">Medziphema (Km 48)</SvgText>
-
-              {/* Waypoint 5: Dzüdza River Bridge */}
-              <Circle cx={230} cy={70} r={5} fill={Colors.warningBright} />
-              <SvgText x={240} y={75} fill={Colors.textMuted} fontSize={9}>Dzüdza Br.</SvgText>
-
-              {/* Waypoint 6: Kohima Delivery Destination */}
-              <Circle cx={310} cy={30} r={7} fill={Colors.danger} />
-              <SvgText x={265} y={22} fill={Colors.textPrimary} fontSize={10} fontWeight="800">Kohima Hospital</SvgText>
-            </Svg>
-
-            {/* Inset GPS Telemetry Cluster */}
-            <View style={styles.hudOverlayCluster}>
-              <View style={styles.hudPill}>
-                <Mountain size={12} color={Colors.warning} />
-                <Text style={styles.hudPillValue}>1,440 m MSL</Text>
-              </View>
-              <View style={styles.hudPill}>
-                <Gauge size={12} color={Colors.primary} />
-                <Text style={styles.hudPillValue}>28 km/h</Text>
-              </View>
-              <View style={styles.hudPill}>
-                <Compass size={12} color={Colors.primary} />
-                <Text style={styles.hudPillValue}>042° NE</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* GPS Tracking Consent Control */}
-          <View style={styles.consentRow}>
-            <View style={styles.consentInfo}>
-              <Radio size={16} color={gpsSharing ? Colors.primary : Colors.textMuted} />
-              <View>
-                <Text style={styles.consentTitle}>Mission GPS Beacon</Text>
-                <Text style={styles.consentSub}>Broadcasting encrypted 15s breadcrumbs to Control</Text>
-              </View>
-            </View>
-            <Switch
-              value={gpsSharing}
-              onValueChange={setGpsSharing}
-              trackColor={{ false: Colors.border, true: Colors.primaryDark }}
-              thumbColor={gpsSharing ? Colors.primary : Colors.textMuted}
-            />
-          </View>
-        </View>
-
-        {/* ACCESSIBILITY TABLE: TURN-BY-TURN / OFFLINE TEXT ALTERNATIVE */}
-        <Text style={styles.sectionTitle}>CORRIDOR SEGMENTS & TEXT ALTERNATIVE</Text>
-        <Text style={styles.sectionSubtitle}>
-          Offline readable road log. Check passability before proceeding through high-risk gradients.
-        </Text>
-
-        <View style={styles.tableCard}>
-          {NH29_WAYPOINTS.map((wp, idx) => (
-            <View 
-              key={wp.id} 
-              style={[
-                styles.tableRow, 
-                wp.status === 'current' && styles.tableRowCurrent,
-                idx === NH29_WAYPOINTS.length - 1 && { borderBottomWidth: 0 }
-              ]}
-            >
-              <View style={styles.tableStatusCol}>
-                {wp.status === 'passed' && <CheckCircle2 size={16} color={Colors.success} />}
-                {wp.status === 'current' && <Navigation size={16} color={Colors.primary} />}
-                {wp.status === 'upcoming' && <Clock size={16} color={Colors.textMuted} />}
-              </View>
-
-              <View style={styles.tableInfoCol}>
-                <View style={styles.tableNameRow}>
-                  <Text style={[styles.tableName, wp.status === 'current' && styles.tableNameCurrent]}>
-                    {wp.name}
-                  </Text>
-                  <Text style={styles.tableKm}>Km {wp.km_mark.toFixed(1)}</Text>
-                </View>
-
-                {wp.hazard && (
-                  <View style={styles.tableHazardTag}>
-                    <AlertTriangle size={12} color={Colors.danger} />
-                    <Text style={styles.tableHazardText}>{wp.hazard}</Text>
-                  </View>
-                )}
-
-                {wp.is_checkpoint && (
-                  <View style={styles.tableCheckpointTag}>
-                    <Text style={styles.tableCheckpointText}>MANDATORY WEIGHBRIDGE CHECK</Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* MAP LAYERS MODAL */}
-      <Modal visible={showLayers} transparent animationType="slide">
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Corridor Map Layers</Text>
-              <TouchableOpacity onPress={() => setShowLayers(false)}>
-                <X size={20} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.layerRow}>
-              <Text style={styles.layerLabel}>Geological Hazard Points (GSI)</Text>
-              <Switch 
-                value={layerHazards} 
-                onValueChange={setLayerHazards} 
-                trackColor={{ false: Colors.border, true: Colors.dangerDark }}
-                thumbColor={layerHazards ? Colors.danger : Colors.textMuted}
-              />
-            </View>
-
-            <View style={styles.layerRow}>
-              <Text style={styles.layerLabel}>Monsoon Rain & Fog Radar</Text>
-              <Switch 
-                value={layerWeather} 
-                onValueChange={setLayerWeather}
-                trackColor={{ false: Colors.border, true: Colors.warningDark }}
-                thumbColor={layerWeather ? Colors.warning : Colors.textMuted}
-              />
-            </View>
-
-            <View style={styles.layerRow}>
-              <Text style={styles.layerLabel}>Field Observation Reports</Text>
-              <Switch 
-                value={layerFieldReports} 
-                onValueChange={setLayerFieldReports}
-                trackColor={{ false: Colors.border, true: Colors.primaryDark }}
-                thumbColor={layerFieldReports ? Colors.primary : Colors.textMuted}
-              />
-            </View>
-
-            <View style={styles.layerRow}>
-              <Text style={styles.layerLabel}>Show Alternative Passes (Niuland Bypass)</Text>
-              <Switch 
-                value={layerAlternatives} 
-                onValueChange={setLayerAlternatives}
-                trackColor={{ false: Colors.border, true: Colors.primaryDark }}
-                thumbColor={layerAlternatives ? Colors.primary : Colors.textMuted}
-              />
-            </View>
-
-            <TouchableOpacity 
-              style={styles.modalCloseBtn}
-              onPress={() => setShowLayers(false)}
-            >
-              <Text style={styles.modalCloseBtnText}>Apply Layers</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
+  const expired = selection && new Date(selection.expires_at).getTime() <= checkedAt;
+  const geometry = selection?.route?.geometry.coordinates || [];
+  return <View style={styles.container}>
+    <HeaderBar driverName={session.user.display_name} onSyncPress={() => onNavigateTab('sync')} onSosPress={onOpenSos} />
+    <ScrollView contentContainerStyle={styles.scroll}>
+      <View style={styles.warning}>
+        <AlertTriangle size={20} color={Colors.warning} />
+        <Text style={styles.warningText}>Planning baseline only. This is not road navigation or vehicle clearance. Confirm current conditions with the authority before travel.</Text>
+      </View>
+      <View style={styles.titleRow}>
+        <View><Text style={styles.eyebrow}>MISSION ROUTE</Text><Text style={styles.title}>{mission?.mission_id || 'No mission'}</Text></View>
+        <TouchableOpacity onPress={() => { setLoading(true); void load(); }} accessibilityLabel="Refresh route selection"><RefreshCw size={20} color={Colors.primary} /></TouchableOpacity>
+      </View>
+      {loading && <ActivityIndicator color={Colors.primary} />}
+      {!!notice && <Text style={styles.notice}>{notice}</Text>}
+      {mission && <View style={styles.card}>
+        <Text style={styles.label}>Assigned journey</Text>
+        <Text style={styles.value}>{mission.from_location || 'Origin unavailable'} → {mission.to_location || 'Destination unavailable'}</Text>
+        <Text style={styles.muted}>Vehicle {mission.vehicle_id || 'not assigned'} · Mission {mission.state}</Text>
+      </View>}
+      {selection && <View style={styles.card}>
+        <View style={styles.titleRow}><Navigation size={18} color={Colors.primary} /><Text style={styles.value}>Selected baseline</Text></View>
+        <Text style={[styles.notice, expired && styles.expired]}>{expired ? 'Expired — do not rely on this baseline' : 'Unverified planning context'}</Text>
+        {geometry.length >= 2 ? <View style={styles.map}>
+          <Svg width="100%" height={220} viewBox="0 0 340 220">
+            <Polyline points={routePoints(geometry)} fill="none" stroke={Colors.primary} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+          <Text style={styles.muted}>Saved route geometry · no offline basemap or turn-by-turn guidance</Text>
+        </View> : <Text style={styles.notice}>Route geometry unavailable.</Text>}
+        <Text style={styles.label}>Distance</Text><Text style={styles.value}>{selection.route?.distance_m == null ? 'Unavailable' : `${(selection.route.distance_m / 1000).toFixed(1)} km`}</Text>
+        <Text style={styles.label}>Source</Text><Text style={styles.muted}>{selection.source?.provider || 'Unavailable'} · retrieved {selection.source?.retrieved_at || 'unknown'}</Text>
+        <Text style={styles.label}>Valid until</Text><Text style={styles.muted}>{selection.expires_at}</Text>
+        <Text style={styles.label}>Linked road segments</Text>
+        {(selection.route?.segment_ids || []).length ? selection.route!.segment_ids.map(id => <Text key={id} style={styles.segment}>{id}</Text>) : <Text style={styles.muted}>No linked segments recorded.</Text>}
+      </View>}
+      <View style={styles.card}>
+        <View style={styles.titleRow}><Text style={styles.value}>Mission GPS sharing</Text><Switch value={gpsSharing} onValueChange={value => void setSharing(value)} /></View>
+        <Text style={styles.muted}>{gpsNotice}</Text>
+        <Text style={styles.muted}>Foreground only. Sharing stops when this screen closes, on logout, or when you switch it off. Offline positions remain queued until the server accepts them.</Text>
+      </View>
+    </ScrollView>
+  </View>;
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.bgBase,
-  },
-  scroll: {
-    padding: Spacing.md,
-    paddingBottom: Spacing.xxl,
-  },
-  disclaimerBanner: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FCD34D',
-    borderWidth: 1,
-    borderRadius: TouchTargets.borderRadius,
-    padding: Spacing.sm,
-    marginBottom: Spacing.md,
-    gap: Spacing.sm,
-    alignItems: 'flex-start',
-  },
-  disclaimerTextGroup: {
-    flex: 1,
-  },
-  disclaimerTitle: {
-    color: '#B45309',
-    fontWeight: '800',
-    fontSize: Typography.fontSizes.xs,
-    letterSpacing: 0.5,
-  },
-  disclaimerText: {
-    color: '#92400E',
-    fontSize: Typography.fontSizes.xs - 1,
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  mapCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: TouchTargets.cardRadius,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  mapToolbar: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-  },
-  mapHeaderInfo: {
-    flex: 1,
-  },
-  mapTitle: {
-    color: Colors.textPrimary,
-    fontWeight: '800',
-    fontSize: Typography.fontSizes.sm,
-    letterSpacing: 0.5,
-  },
-  mapSub: {
-    color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs - 1,
-  },
-  layerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
-    gap: 4,
-  },
-  layerBtnText: {
-    color: Colors.primary,
-    fontSize: Typography.fontSizes.xs,
-    fontWeight: '700',
-  },
-  canvasContainer: {
-    backgroundColor: '#0F294A',
-    borderRadius: TouchTargets.borderRadius,
-    overflow: 'hidden',
-    position: 'relative',
-    marginBottom: Spacing.sm,
-  },
-  hudOverlayCluster: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    right: 8,
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'flex-start',
-  },
-  hudPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(15, 41, 74, 0.9)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-    gap: 4,
-  },
-  hudPillValue: {
-    color: '#FFFFFF',
-    fontSize: Typography.fontSizes.xs - 1,
-    fontFamily: 'monospace',
-    fontWeight: '700',
-  },
-  consentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: Spacing.xs,
-  },
-  consentInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    flex: 1,
-  },
-  consentTitle: {
-    color: Colors.textPrimary,
-    fontSize: Typography.fontSizes.xs,
-    fontWeight: '700',
-  },
-  consentSub: {
-    color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs - 2,
-  },
-  sectionTitle: {
-    color: Colors.textPrimary,
-    fontWeight: '800',
-    fontSize: Typography.fontSizes.sm,
-    letterSpacing: 0.5,
-  },
-  sectionSubtitle: {
-    color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs,
-    marginBottom: Spacing.sm,
-    marginTop: 2,
-  },
-  tableCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: TouchTargets.cardRadius,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    padding: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-    alignItems: 'center',
-  },
-  tableRowCurrent: {
-    backgroundColor: '#EFF6FF',
-  },
-  tableStatusCol: {
-    width: 28,
-  },
-  tableInfoCol: {
-    flex: 1,
-  },
-  tableNameRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  tableName: {
-    color: Colors.textSecondary,
-    fontSize: Typography.fontSizes.sm,
-    fontWeight: '600',
-  },
-  tableNameCurrent: {
-    color: Colors.primary,
-    fontWeight: '800',
-  },
-  tableKm: {
-    color: Colors.textMuted,
-    fontSize: Typography.fontSizes.xs,
-    fontFamily: 'monospace',
-  },
-  tableHazardTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 4,
-  },
-  tableHazardText: {
-    color: '#DC2626',
-    fontSize: Typography.fontSizes.xs - 1,
-    fontWeight: '700',
-  },
-  tableCheckpointTag: {
-    marginTop: 4,
-  },
-  tableCheckpointText: {
-    color: '#D97706',
-    fontSize: Typography.fontSizes.xs - 2,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: Spacing.lg,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  modalTitle: {
-    color: Colors.textPrimary,
-    fontSize: Typography.fontSizes.md,
-    fontWeight: '800',
-  },
-  layerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  layerLabel: {
-    color: Colors.textSecondary,
-    fontSize: Typography.fontSizes.sm,
-  },
-  modalCloseBtn: {
-    backgroundColor: Colors.primary,
-    height: TouchTargets.buttonMinHeight,
-    borderRadius: TouchTargets.borderRadius,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: Spacing.lg,
-  },
-  modalCloseBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '800',
-    fontSize: Typography.fontSizes.sm,
-  },
+  container: { flex: 1, backgroundColor: Colors.bgBase },
+  scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl },
+  warning: { padding: Spacing.md, backgroundColor: Colors.bgSurface, borderColor: Colors.warning, borderWidth: 1, borderRadius: 10, flexDirection: 'row', gap: 10, marginBottom: 16 },
+  warningText: { flex: 1, color: Colors.textPrimary, lineHeight: 20 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  eyebrow: { color: Colors.textMuted, fontSize: 11, letterSpacing: 1.5 },
+  title: { color: Colors.textPrimary, fontSize: 24, fontWeight: '800' },
+  card: { backgroundColor: Colors.bgSurface, padding: Spacing.md, borderRadius: 12, marginBottom: 16, gap: 8 },
+  label: { color: Colors.textMuted, fontSize: 11, textTransform: 'uppercase', marginTop: 8 },
+  value: { color: Colors.textPrimary, fontSize: 16, fontWeight: '700' },
+  muted: { color: Colors.textSecondary, fontSize: 12, lineHeight: 18 },
+  notice: { color: Colors.warning, marginBottom: 10 },
+  expired: { color: Colors.danger },
+  map: { backgroundColor: Colors.bgBase, borderRadius: 8, alignItems: 'center', marginVertical: 8 },
+  segment: { color: Colors.textSecondary, paddingVertical: 3 },
+  footer: { color: Colors.textMuted, lineHeight: 18, marginTop: 8 },
 });

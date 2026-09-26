@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Crypto from 'expo-crypto';
 import { 
   Session, 
   CachedMission, 
@@ -15,6 +16,10 @@ const KEYS = {
   ALERTS_PREFIX: 'ner_lens_alerts_',
   REPORTS_PREFIX: 'ner_lens_reports_',
   GPS_QUEUE_PREFIX: 'ner_lens_gps_',
+  REPORT_SEGMENTS_PREFIX: 'ner_lens_report_segments_',
+  ROUTE_PREFIX: 'ner_lens_route_',
+  DEVICE_ID: 'ner_lens_device_id',
+  GPS_SEQUENCE_PREFIX: 'ner_lens_gps_sequence_',
   SETTINGS: 'ner_lens_settings',
 };
 
@@ -122,6 +127,41 @@ export async function saveGpsQueue(owner: string, queue: PositionBatchQueueItem[
   await AsyncStorage.setItem(`${KEYS.GPS_QUEUE_PREFIX}${owner}`, JSON.stringify(queue));
 }
 
+export async function getDeviceId(): Promise<string> {
+  const saved = await AsyncStorage.getItem(KEYS.DEVICE_ID);
+  if (saved) return saved;
+  const id = Crypto.randomUUID();
+  await AsyncStorage.setItem(KEYS.DEVICE_ID, id);
+  return id;
+}
+
+export async function nextGpsSequence(owner: string, missionId: string): Promise<number> {
+  const key = `${KEYS.GPS_SEQUENCE_PREFIX}${owner}_${missionId}`;
+  const next = Number(await AsyncStorage.getItem(key) || 0) + 1;
+  await AsyncStorage.setItem(key, String(next));
+  return next;
+}
+
+export async function getReportSegments(owner: string): Promise<import('../types').ReportSegment[]> {
+  const data = await AsyncStorage.getItem(`${KEYS.REPORT_SEGMENTS_PREFIX}${owner}`);
+  if (!data) return [];
+  try { return JSON.parse(data); } catch { return []; }
+}
+
+export async function saveReportSegments(owner: string, segments: import('../types').ReportSegment[]): Promise<void> {
+  await AsyncStorage.setItem(`${KEYS.REPORT_SEGMENTS_PREFIX}${owner}`, JSON.stringify(segments));
+}
+
+export async function getCachedRoute(owner: string, missionId: string): Promise<import('../types').RouteSelection | null> {
+  const data = await AsyncStorage.getItem(`${KEYS.ROUTE_PREFIX}${owner}_${missionId}`);
+  if (!data) return null;
+  try { return JSON.parse(data); } catch { return null; }
+}
+
+export async function saveCachedRoute(owner: string, missionId: string, route: import('../types').RouteSelection): Promise<void> {
+  await AsyncStorage.setItem(`${KEYS.ROUTE_PREFIX}${owner}_${missionId}`, JSON.stringify(route));
+}
+
 export async function getSettings(): Promise<AppSettings> {
   const data = await AsyncStorage.getItem(KEYS.SETTINGS);
   if (!data) return DEFAULT_SETTINGS;
@@ -142,5 +182,6 @@ export async function saveSettings(settings: Partial<AppSettings>): Promise<AppS
 export async function clearCurrentAccountCache(owner: string): Promise<void> {
   await AsyncStorage.removeItem(`${KEYS.MISSIONS_PREFIX}${owner}`);
   await AsyncStorage.removeItem(`${KEYS.ALERTS_PREFIX}${owner}`);
+  await AsyncStorage.removeItem(`${KEYS.REPORT_SEGMENTS_PREFIX}${owner}`);
   await AsyncStorage.removeItem(KEYS.SESSION);
 }

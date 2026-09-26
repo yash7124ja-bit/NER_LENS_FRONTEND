@@ -28,20 +28,18 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleLogin = async (overrideEmail?: string, overridePass?: string) => {
-    const targetEmail = overrideEmail || email;
-    const targetPass = overridePass || password || 'demo123';
-
-    if (!targetEmail.trim()) {
-      setError('Please provide Driver ID or email address');
+  const handleLogin = async () => {
+    if (!email.trim() || !password) {
+      setError('Enter your email and password');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const session = await ApiClient.login(targetEmail, targetPass);
+      const session = await ApiClient.login(email, password);
       await saveSession(session);
+      setPassword('');
       onLoginSuccess(session);
     } catch (err: any) {
       setError(err.message || 'Login failed. Check server gateway connection.');
@@ -91,7 +89,7 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
             <Truck size={18} color={Colors.textMuted} />
             <TextInput
               style={styles.input}
-              placeholder="e.g. driver-042 or driver.rehan@nerlens.org"
+              placeholder="Driver email"
               placeholderTextColor={Colors.textDisabled}
               value={email}
               onChangeText={setEmail}
@@ -126,35 +124,6 @@ export const LoginScreen: React.FC<Props> = ({ onLoginSuccess }) => {
             ) : (
               <Text style={styles.primaryBtnText}>{t('signInButton')}</Text>
             )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Quick Driver Accounts */}
-        <View style={styles.presetsBox}>
-          <Text style={styles.presetTitle}>{t('quickPresets')}</Text>
-          
-          <TouchableOpacity 
-            style={styles.presetBtn}
-            onPress={() => handleLogin('driver.rehan@nerlens.org', 'rehan123')}
-            activeOpacity={0.7}
-          >
-            <ShieldCheck size={18} color={Colors.primary} />
-            <View style={styles.presetTextGroup}>
-              <Text style={styles.presetName}>Rehan Verma (Driver DRV-042)</Text>
-              <Text style={styles.presetDesc}>Assigned: Dimapur → Kohima (5T Refrigerator Truck)</Text>
-            </View>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.presetBtn}
-            onPress={() => handleLogin('driver.ao@nerlens.org', 'ao123')}
-            activeOpacity={0.7}
-          >
-            <ShieldCheck size={18} color={Colors.warning} />
-            <View style={styles.presetTextGroup}>
-              <Text style={styles.presetName}>T. Ao (Senior Driver + Field Reporter)</Text>
-              <Text style={styles.presetDesc}>Dual-Role Driver with Ground Truth Camera Access</Text>
-            </View>
           </TouchableOpacity>
         </View>
 

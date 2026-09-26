@@ -11,7 +11,7 @@ import {
 import { HeaderBar } from '../components/HeaderBar';
 import { Colors, Spacing, Typography, TouchTargets } from '../theme';
 import { CachedMission, Session, CachedRouteAlert } from '../types';
-import { getCachedMissions, saveCachedMissions, getCachedAlerts } from '../services/storage';
+import { getCachedMissions, saveCachedMissions, getCachedAlerts, saveCachedAlerts } from '../services/storage';
 import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
 import { t } from '../services/i18n';
@@ -50,26 +50,32 @@ export const MissionsHomeScreen: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
       const cached = await getCachedMissions(owner);
-      if (cached.length > 0) {
-        setMissions(cached);
-      } else {
-        const fetched = await ApiClient.fetchMissions(owner, 'corridor-dimapur-kohima');
-        await saveCachedMissions(owner, fetched);
-        setMissions(fetched);
-      }
-
+      setMissions(cached);
       const cachedAlerts = await getCachedAlerts(owner);
-      if (cachedAlerts.length > 0) {
-        setAlerts(cachedAlerts);
-      } else {
+      setAlerts(cachedAlerts);
+      try {
+        const fetched = await ApiClient.fetchAssignedMissions(owner);
+        const merged = fetched.map(m => {
+          const previous = cached.find(item => item.mission_id === m.mission_id);
+          return previous?.pending.length ? { ...m, state: previous.state, pending: previous.pending } : m;
+        });
+        await saveCachedMissions(owner, merged);
+        setMissions(merged);
         const fetchedAlerts = await ApiClient.fetchAlerts(owner);
-        setAlerts(fetchedAlerts);
+        const mergedAlerts = fetchedAlerts.map(a => cachedAlerts.find(item => item.alert_id === a.alert_id && item.pending_decision) || a);
+        await saveCachedAlerts(owner, mergedAlerts);
+        setAlerts(mergedAlerts);
+        setLoadError(null);
+      } catch (error) {
+        setLoadError(cached.length ? 'Offline: showing saved assignments. Actions remain pending until confirmed.'
+          : error instanceof Error && error.message === 'Unauthorized' ? 'Session expired. Sign in again.'
+          : 'Assigned missions could not be loaded. Check the connection and retry.');
       }
-
       const count = await SyncQueueManager.getPendingCount(owner);
       setPendingCount(count);
     } finally {
@@ -121,10 +127,11 @@ export const MissionsHomeScreen: React.FC<Props> = ({
           </View>
           <View style={styles.shiftBadge}>
             <Clock size={12} color={Colors.primary} />
-            <Text style={styles.shiftText}>03h 40m</Text>
+            <Text style={styles.shiftText}>ASSIGNED</Text>
           </View>
         </View>
 
+        {loadError && <Text style={styles.emptyText}>{loadError}</Text>}
         {loading ? (
           <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
         ) : activeMission ? (
@@ -154,12 +161,12 @@ export const MissionsHomeScreen: React.FC<Props> = ({
               <View style={styles.routeBox}>
                 <View style={styles.routeEndpoint}>
                   <MapPin size={16} color={Colors.primary} />
-                  <Text style={styles.routeLoc} numberOfLines={1}>{activeMission.from_location || 'Dimapur'}</Text>
+                  <Text style={styles.routeLoc} numberOfLines={1}>{activeMission.from_location || 'Origin unavailable'}</Text>
                 </View>
                 <ArrowRight size={16} color={Colors.textMuted} />
                 <View style={styles.routeEndpoint}>
                   <MapPin size={16} color={Colors.danger} />
-                  <Text style={styles.routeLoc} numberOfLines={1}>{activeMission.to_location || 'Kohima'}</Text>
+                  <Text style={styles.routeLoc} numberOfLines={1}>{activeMission.to_location || 'Destination unavailable'}</Text>
                 </View>
               </View>
 
@@ -167,7 +174,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
               <View style={styles.cargoInfo}>
                 <Text style={styles.cargoTitle}>{activeMission.cargo_class}</Text>
                 <Text style={styles.vehicleInfo}>
-                  {activeMission.vehicle_id} · {activeMission.cargo_weight_tonnes || 4.2}T Net Payload
+                  {activeMission.vehicle_id || 'Vehicle pending assignment'}
                 </Text>
               </View>
 
@@ -175,36 +182,34 @@ export const MissionsHomeScreen: React.FC<Props> = ({
               <View style={styles.telemetryGrid}>
                 <View style={styles.telemetryCell}>
                   <Clock size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>6h 20m</Text>
-                  <Text style={styles.telemetryLabel}>EST. DURATION</Text>
+                  <Text style={styles.telemetryValue}>—</Text>
+                  <Text style={styles.telemetryLabel}>ETA UNAVAILABLE</Text>
                 </View>
                 <View style={styles.telemetryCell}>
                   <Navigation size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>178 km</Text>
-                  <Text style={styles.telemetryLabel}>REMAINING</Text>
+                  <Text style={styles.telemetryValue}>—</Text>
+                  <Text style={styles.telemetryLabel}>DISTANCE UNAVAILABLE</Text>
                 </View>
                 <View style={styles.telemetryCell}>
                   <Mountain size={16} color={Colors.warning} />
-                  <Text style={styles.telemetryValue}>1,440m</Text>
-                  <Text style={styles.telemetryLabel}>ALTITUDE</Text>
+                  <Text style={styles.telemetryValue}>—</Text>
+                  <Text style={styles.telemetryLabel}>ALTITUDE UNAVAILABLE</Text>
                 </View>
                 <View style={styles.telemetryCell}>
                   <Gauge size={16} color={Colors.primary} />
-                  <Text style={styles.telemetryValue}>35 km/h</Text>
-                  <Text style={styles.telemetryLabel}>MTN SPEED CAP</Text>
+                  <Text style={styles.telemetryValue}>—</Text>
+                  <Text style={styles.telemetryLabel}>SPEED UNAVAILABLE</Text>
                 </View>
               </View>
 
               {/* Milestone Progress Bar */}
               <View style={styles.milestoneBox}>
                 <View style={styles.milestoneRow}>
-                  <Text style={styles.milestoneActive}>Dimapur</Text>
-                  <Text style={styles.milestoneCurrent}>Pagla Pahar (Km 34)</Text>
-                  <Text style={styles.milestonePending}>Medziphema</Text>
-                  <Text style={styles.milestonePending}>Kohima</Text>
+                  <Text style={styles.milestoneActive}>{activeMission.from_location || 'Origin'}</Text>
+                  <Text style={styles.milestonePending}>{activeMission.to_location || 'Destination'}</Text>
                 </View>
                 <View style={styles.progressBarBg}>
-                  <View style={[styles.progressBarFill, { width: '42%' }]} />
+                  <View style={[styles.progressBarFill, { width: activeMission.state === 'delivered' ? '100%' : '0%' }]} />
                 </View>
               </View>
 
@@ -291,7 +296,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                   <Text style={styles.hazardTitle}>
                     {criticalAlert.severity === 'critical' ? t('landslideRisk') : 'CORRIDOR ALERT'}
                   </Text>
-                  <Text style={styles.hazardDist}>{criticalAlert.distance_ahead_km} km Ahead</Text>
+                  {criticalAlert.distance_ahead_km !== undefined && <Text style={styles.hazardDist}>{criticalAlert.distance_ahead_km} km Ahead</Text>}
                 </View>
                 <Text style={styles.hazardMessage} numberOfLines={2}>
                   {criticalAlert.message}
@@ -328,7 +333,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                   <Navigation size={24} color={Colors.primary} />
                 </View>
                 <Text style={styles.gridLabel}>{t('myRoutes')}</Text>
-                <Text style={styles.gridSub}>NH-29 Live Telemetry</Text>
+                <Text style={styles.gridSub}>Saved planning baseline</Text>
               </TouchableOpacity>
 
               {/* Offline Reports / Outbox */}

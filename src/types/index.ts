@@ -19,7 +19,7 @@ export interface Session {
   expires_at: string;
 }
 
-export type MissionState = 'planned' | 'accepted' | 'active' | 'delivered' | 'cancelled';
+export type MissionState = 'planned' | 'accepted' | 'active' | 'delivered' | 'rejected' | 'completed' | 'cancelled';
 export type DriverAction = 'accept' | 'reject' | 'start' | 'declare-delivery';
 
 export interface PendingDriverAction {
@@ -81,7 +81,7 @@ export interface CachedRouteAlert {
   reason: string;
   route_id: string;
   candidate_route_id: string;
-  severity: 'low' | 'moderate' | 'high' | 'critical';
+  severity?: 'low' | 'moderate' | 'high' | 'critical';
   location_name?: string;
   distance_ahead_km?: number;
   expires_at: string;
@@ -137,6 +137,27 @@ export interface Corridor {
   name: string;
   graph_version: string;
   data_mode: string;
+}
+
+export interface ReportSegment {
+  segment_id: string;
+  corridor_id: string;
+  label: string;
+}
+
+export interface RouteSelection {
+  selection_id: string;
+  route_id: string;
+  selected_at: string;
+  expires_at: string;
+  status: 'planning_baseline_only' | 'expired_baseline';
+  route: null | {
+    geometry: { type: 'LineString'; coordinates: [number, number][] };
+    segment_ids: string[];
+    distance_m: number;
+    travel_time_seconds: { p50: number | null; basis: string };
+  };
+  source: null | { provider: string; retrieved_at: string; vehicle_entitlement: string };
 }
 
 export interface Waypoint {

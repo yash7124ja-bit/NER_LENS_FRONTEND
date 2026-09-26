@@ -12,8 +12,9 @@ import {
 } from 'react-native';
 import { HeaderBar } from '../components/HeaderBar';
 import { Colors, Spacing, Typography, TouchTargets } from '../theme';
-import { Session, FieldReport, IncidentType } from '../types';
-import { getFieldReports } from '../services/storage';
+import { Session, FieldReport, IncidentType, ReportSegment } from '../types';
+import { getFieldReports, getCachedMissions, getReportSegments, saveReportSegments } from '../services/storage';
+import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
 import * as ImagePicker from 'expo-image-picker';
 import * as Crypto from 'expo-crypto';
@@ -53,29 +54,15 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
   const [incidentType, setIncidentType] = useState<IncidentType>('landslide');
   const [condition, setCondition] = useState<FieldReport['condition']>('impassable');
   const [note, setNote] = useState('');
-  const [coords, setCoords] = useState<[number, number]>([93.7275, 25.8821]); // Pagla Pahar approx [lon, lat]
-  const [accuracy, setAccuracy] = useState(12);
+  const [coords, setCoords] = useState<[number, number] | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
+  const [segments, setSegments] = useState<ReportSegment[]>([]);
+  const [segmentId, setSegmentId] = useState<string | null>(null);
+  const [locationNotice, setLocationNotice] = useState('Waiting for a device location fix');
   const [photos, setPhotos] = useState<string[]>([]);
   const [reports, setReports] = useState<FieldReport[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    loadReports();
-    // Try to get fresh location fix
-    (async () => {
-      try {
-        const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status === 'granted') {
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          setCoords([loc.coords.longitude, loc.coords.latitude]);
-          setAccuracy(loc.coords.accuracy || 15);
-        }
-      } catch {
-        // Use default corridor coords
-      }
-    })();
-  }, [owner]);
 
   const loadReports = async () => {
     const cached = await getFieldReports(owner);
@@ -83,6 +70,36 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
     const count = await SyncQueueManager.getPendingCount(owner);
     setPendingCount(count);
   };
+
+  useEffect(() => {
+    void Promise.resolve().then(loadReports);
+    (async () => {
+      const cached = await getReportSegments(owner);
+      setSegments(cached);
+      try {
+        const missions = await getCachedMissions(owner);
+        const fresh = await ApiClient.fetchReportSegments([...new Set(missions.map(m => m.corridor_id))]);
+        await saveReportSegments(owner, fresh);
+        setSegments(fresh);
+      } catch { /* Keep the owner's previously saved segment list offline. */ }
+    })();
+    // Try to get fresh location fix
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          setCoords([loc.coords.longitude, loc.coords.latitude]);
+          setAccuracy(loc.coords.accuracy);
+          setLocationNotice('Device location acquired');
+        } else {
+          setLocationNotice('Location permission denied. A report needs a location fix.');
+        }
+      } catch {
+        setLocationNotice('Location unavailable. Retry after enabling device location.');
+      }
+    })();
+  }, [owner]);
 
   const handlePickImage = async () => {
     try {
@@ -129,6 +146,10 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
   };
 
   const handleSubmit = async () => {
+    if (!coords || accuracy === null || !segmentId) {
+      Alert.alert('Location and segment required', 'Acquire a device location and select the observed corridor segment.');
+      return;
+    }
     if (!note.trim()) {
       Alert.alert('Description Required', 'Please enter a brief note describing the field condition.');
       return;
@@ -139,10 +160,10 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
       const newReport: FieldReport = {
         client_report_id: Crypto.randomUUID(),
         owner,
-        mission_id: 'ML-0176',
+        mission_id: undefined,
         sequence: reports.length + 1,
         observed_time: new Date().toISOString(),
-        segment_id: 'segment-nh29-km34',
+        segment_id: segmentId,
         coordinates: coords,
         accuracy_m: accuracy,
         incident_type: incidentType,
@@ -194,7 +215,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
         <View style={styles.ribbon}>
           <Text style={styles.title}>GEO-TAGGED FIELD REPORT</Text>
           <Text style={styles.subtitle}>
-            Submit verifiable ground truth observations along NH-29. Photographs are hashed locally for integrity.
+            Submit a location-linked observation. Attached photos stay on this device until secure upload is available.
           </Text>
         </View>
 
@@ -247,12 +268,21 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
           </TouchableOpacity>
         </View>
 
+        {/* SERVER SEGMENT SELECTION */}
+        <Text style={styles.inputLabel}>OBSERVED CORRIDOR SEGMENT</Text>
+        {segments.length === 0 ? <Text style={styles.emptyText}>No authorized segments saved. Connect to load your assigned corridor.</Text> :
+          segments.map(segment => <TouchableOpacity key={segment.segment_id}
+            style={[styles.condBtn, segmentId === segment.segment_id && styles.condSingle]}
+            onPress={() => setSegmentId(segment.segment_id)}>
+            <Text style={styles.condText}>{segment.label}</Text>
+          </TouchableOpacity>)}
+
         {/* GEOLOCATION FIX DISPLAY */}
         <View style={styles.geoBox}>
           <MapPin size={16} color={Colors.primary} />
           <View style={styles.geoTextGroup}>
-            <Text style={styles.geoTitle}>Geo-Fix: {coords[1].toFixed(5)}°N, {coords[0].toFixed(5)}°E</Text>
-            <Text style={styles.geoAccuracy}>Accuracy: ±{accuracy}m · Segment: NH-29 Pagla Pahar</Text>
+            <Text style={styles.geoTitle}>{coords ? `Geo-Fix: ${coords[1].toFixed(5)}°N, ${coords[0].toFixed(5)}°E` : locationNotice}</Text>
+            <Text style={styles.geoAccuracy}>{accuracy === null ? 'Accuracy unavailable' : `Accuracy: ±${accuracy}m`}</Text>
           </View>
         </View>
 
@@ -303,7 +333,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
           ) : (
             <>
               <Send size={18} color={Colors.bgBase} />
-              <Text style={styles.submitBtnText}>Submit Field Evidence</Text>
+              <Text style={styles.submitBtnText}>Save Field Report</Text>
             </>
           )}
         </TouchableOpacity>
@@ -327,7 +357,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
                     <Clock size={12} color={Colors.warning} />
                   )}
                   <Text style={styles.syncBadgeText}>
-                    {rep.sync_state === 'acknowledged' ? 'VERIFIED SYNC' : 'OFFLINE STORED'}
+                    {rep.sync_state === 'acknowledged' ? (rep.photo_uris.length ? 'REPORT SENT · PHOTOS LOCAL' : 'REPORT SENT FOR REVIEW') : 'SAVED ON DEVICE'}
                   </Text>
                 </View>
               </View>

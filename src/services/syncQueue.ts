@@ -41,10 +41,10 @@ export class SyncQueueManager {
     const reports = await getFieldReports(owner);
     const gps = await getGpsQueue(owner);
 
-    const pendingMissions = missions.reduce((acc, m) => acc + m.pending.filter(p => p.state === 'saved_on_device' || p.state === 'sending').length, 0);
+    const pendingMissions = missions.reduce((acc, m) => acc + m.pending.filter(p => p.state !== 'acknowledged').length, 0);
     const pendingAlerts = alerts.filter(a => a.pending_decision && a.sync_state !== 'acknowledged').length;
-    const pendingReports = reports.filter(r => r.sync_state === 'saved_on_device' || r.sync_state === 'sending').length;
-    const pendingGps = gps.filter(g => g.state === 'saved_on_device' || g.state === 'sending').length;
+    const pendingReports = reports.filter(r => r.sync_state !== 'acknowledged').length;
+    const pendingGps = gps.filter(g => g.state !== 'acknowledged').length;
 
     return pendingMissions + pendingAlerts + pendingReports + pendingGps;
   }
@@ -56,12 +56,13 @@ export class SyncQueueManager {
     if (index === -1) throw new Error('Mission not found on device');
 
     const mission = { ...missions[index] };
+    if (mission.pending.length) throw new Error('Wait for the previous action to be confirmed or resolve it in the outbox.');
     const idempotencyKey = Crypto.randomUUID();
 
     // Optimistically update state
     const nextStateMap: Record<DriverAction, CachedMission['state']> = {
       accept: 'accepted',
-      reject: 'cancelled',
+      reject: 'rejected',
       start: 'active',
       'declare-delivery': 'delivered'
     };
@@ -94,11 +95,6 @@ export class SyncQueueManager {
     alert.pending_decision = decision;
     alert.idempotency_key = idempotencyKey;
     alert.sync_state = 'saved_on_device';
-    alert.acknowledgment = {
-      decision,
-      acknowledged_at: new Date().toISOString(),
-    };
-
     alerts[index] = alert;
     await saveCachedAlerts(owner, alerts);
 
@@ -152,11 +148,17 @@ export class SyncQueueManager {
       for (const alert of alerts) {
         if (alert.pending_decision && alert.sync_state !== 'acknowledged') {
           try {
-            await ApiClient.acknowledgeAlert(
+            const receipt = await ApiClient.acknowledgeAlert(
               alert.alert_id,
               alert.pending_decision,
               alert.idempotency_key || alert.alert_id
-            );
+            ) as { decision: 'accept' | 'decline'; selection_id?: string };
+            alert.acknowledgment = {
+              decision: receipt.decision,
+              acknowledged_at: new Date().toISOString(),
+              selection_id: receipt.selection_id,
+            };
+            alert.pending_decision = undefined;
             alert.sync_state = 'acknowledged';
             alertsModified = true;
           } catch (e: any) {
@@ -191,6 +193,8 @@ export class SyncQueueManager {
               if (e.message?.includes('Conflict')) {
                 pending.state = 'conflict';
                 pending.error_message = e.message;
+                mission.state = pending.action === 'start' ? 'accepted'
+                  : pending.action === 'declare-delivery' ? 'active' : 'planned';
                 remainingPending.push(pending);
                 missionsModified = true;
                 break; // stop dependent actions for this mission on conflict

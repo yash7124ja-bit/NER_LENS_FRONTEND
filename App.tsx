@@ -13,6 +13,7 @@ import { Colors, Spacing, Typography } from './src/theme';
 import { Session } from './src/types';
 import { getSession, saveSession, getSettings } from './src/services/storage';
 import { setLanguage, t } from './src/services/i18n';
+import { ApiClient } from './src/services/api';
 
 // Screens
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -48,8 +49,20 @@ function MainNavigator() {
         const stored = await getSession();
         const settings = await getSettings();
         setLanguage(settings.language);
-        if (stored) {
-          setSession(stored);
+        if (stored && new Date(stored.expires_at).getTime() > Date.now()) {
+          try {
+            const current = await ApiClient.session();
+            await saveSession(current);
+            setSession(current);
+          } catch (error) {
+            if (error instanceof Error && error.message === 'Unauthorized') {
+              await saveSession(null);
+            } else {
+              setSession(stored); // Valid cached identity remains available offline.
+            }
+          }
+        } else if (stored) {
+          await saveSession(null);
         }
       } finally {
         setLoading(false);
@@ -58,6 +71,7 @@ function MainNavigator() {
   }, []);
 
   const handleLogout = async () => {
+    try { await ApiClient.logout(); } catch { /* Clear the local view even without a connection. */ }
     await saveSession(null);
     setSession(null);
     setActiveTab('home');

@@ -39,16 +39,20 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
   const [loading, setLoading] = useState(true);
   const [pendingCount, setPendingCount] = useState(0);
   const [busyAlertId, setBusyAlertId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
 
   const loadAlerts = async () => {
     try {
       const cached = await getCachedAlerts(owner);
-      if (cached.length > 0) {
-        setAlerts(cached);
-      } else {
+      setAlerts(cached);
+      try {
         const fetched = await ApiClient.fetchAlerts(owner);
-        await saveCachedAlerts(owner, fetched);
-        setAlerts(fetched);
+        const merged = fetched.map(a => cached.find(item => item.alert_id === a.alert_id && item.pending_decision) || a);
+        await saveCachedAlerts(owner, merged);
+        setAlerts(merged);
+        setLoadError('');
+      } catch {
+        setLoadError(cached.length ? 'Offline: showing saved alerts; decisions remain queued.' : 'Alerts unavailable. Check your connection and session.');
       }
       const count = await SyncQueueManager.getPendingCount(owner);
       setPendingCount(count);
@@ -102,10 +106,11 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
         <View style={styles.ribbon}>
           <Text style={styles.title}>CORRIDOR RISK INBOX</Text>
           <Text style={styles.subtitle}>
-            Persisted notifications for NH-29. A candidate route change requires driver acknowledgment.
+            Server-delivered route-change notices for your assigned missions. Review each candidate before deciding.
           </Text>
         </View>
 
+        {!!loadError && <Text style={styles.emptyText}>{loadError}</Text>}
         {loading ? (
           <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 40 }} />
         ) : alerts.length === 0 ? (
@@ -132,7 +137,7 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
                   alert.severity === 'high' && styles.pillHigh,
                   alert.severity === 'moderate' && styles.pillModerate,
                 ]}>
-                  <Text style={styles.severityText}>{alert.severity.toUpperCase()}</Text>
+                  <Text style={styles.severityText}>{alert.severity?.toUpperCase() || 'ROUTE NOTICE'}</Text>
                 </View>
               </View>
 
@@ -143,37 +148,11 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
                 <Text style={styles.reasonText}>{alert.reason}</Text>
               </View>
 
-              {/* REROUTE COMPARISON (If candidate route available) */}
-              {alert.candidate_details && (
-                <View style={styles.comparisonBox}>
-                  <Text style={styles.comparisonTitle}>ALTERNATIVE CANDIDATE COMPARISON</Text>
-
-                  <View style={styles.routeCompRow}>
-                    <View style={styles.routeCompCol}>
-                      <Text style={styles.routeCompName}>Route A (Baseline)</Text>
-                      <Text style={styles.routeCompStats}>178 km · 6h 20m</Text>
-                      <Text style={[styles.routeCompTag, { color: Colors.danger }]}>High Debris Risk</Text>
-                    </View>
-
-                    <ArrowRight size={16} color={Colors.textMuted} />
-
-                    <View style={styles.routeCompCol}>
-                      <Text style={styles.routeCompName}>Route B (Candidate)</Text>
-                      <Text style={styles.routeCompStats}>194 km · {alert.candidate_details.eta_text}</Text>
-                      <Text style={[styles.routeCompTag, { color: Colors.primary }]}>
-                        {alert.candidate_details.eta_diff_text}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.candidateNotes}>
-                    <ShieldCheck size={14} color={Colors.primary} />
-                    <Text style={styles.candidateNotesText}>
-                      {alert.candidate_details.suitability}
-                    </Text>
-                  </View>
-                </View>
-              )}
+              <View style={styles.comparisonBox}>
+                <Text style={styles.comparisonTitle}>DISPATCHER-APPROVED CANDIDATE</Text>
+                <Text style={styles.routeCompStats}>Route ID: {alert.route_id}</Text>
+                <Text style={styles.candidateNotesText}>Planning baseline only. Vehicle and road clearance are not established here.</Text>
+              </View>
 
               {/* Status / Decision Bar */}
               <View style={styles.decisionBar}>
@@ -188,7 +167,7 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
                   <View style={styles.pendingNotice}>
                     <Clock size={16} color={Colors.warning} />
                     <Text style={styles.pendingNoticeText}>
-                      Decision '{alert.pending_decision}' queued on device. Replaying on reconnect.
+                      Decision “{alert.pending_decision}” queued on device. Replaying on reconnect.
                     </Text>
                   </View>
                 ) : (

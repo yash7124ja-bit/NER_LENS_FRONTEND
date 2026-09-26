@@ -56,7 +56,7 @@ export const SyncOutboxScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
   };
 
   useEffect(() => {
-    loadAll();
+    void Promise.resolve().then(loadAll);
     const unsub = SyncQueueManager.subscribe(status => {
       setIsSyncing(status.isSyncing);
       setPendingCount(status.pendingCount);
