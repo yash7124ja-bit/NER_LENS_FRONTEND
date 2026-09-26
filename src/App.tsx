@@ -148,6 +148,7 @@ export default function App() {
         }
         if (
           !controller.signal.aborted &&
+          navigator.onLine &&
           !(err instanceof ApiError && err.status === 401)
         )
           setError("Unable to restore your session. Sign in to try again.");
@@ -167,6 +168,7 @@ export default function App() {
       .catch(() => setError("Offline snapshot could not be saved. Device storage may be unavailable or full."));
   }, [session, catalog, state, draftOnly]);
   useEffect(() => {
+    if (!connected) { setReady("Offline"); return; }
     const controller = new AbortController();
     fetch("/health/ready", { signal: controller.signal })
       .then((r) => setReady(r.ok ? "API ready" : "API not ready"))
@@ -174,7 +176,7 @@ export default function App() {
         if (!controller.signal.aborted) setReady("API unavailable");
       });
     return () => controller.abort();
-  }, [refresh, session]);
+  }, [refresh, session, connected]);
   useEffect(() => {
     if (!session || draftOnly) return;
     const timer = window.setTimeout(
@@ -346,7 +348,7 @@ export default function App() {
         </main>
       ) : !session ? (
         <Login
-          message={error}
+          message={connected ? error : "You're offline. Connect to sign in; no saved session is available on this device."}
           workspaceName={workspaces[workspace].name}
           onLogin={async (data) => {
             setError("");
