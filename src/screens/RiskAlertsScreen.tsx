@@ -66,6 +66,7 @@ export const RiskAlertsScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
     loadAlerts();
     const unsub = SyncQueueManager.subscribe(status => {
       setPendingCount(status.pendingCount);
+      void getCachedAlerts(owner).then(setAlerts);
     });
     return unsub;
   }, [owner]);

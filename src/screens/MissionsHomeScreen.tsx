@@ -83,6 +83,8 @@ export const MissionsHomeScreen: React.FC<Props> = ({
     loadData();
     const unsub = SyncQueueManager.subscribe(status => {
       setPendingCount(status.pendingCount);
+      void getCachedMissions(owner).then(setMissions);
+      void getCachedAlerts(owner).then(setAlerts);
     });
     return unsub;
   }, [owner]);
@@ -153,6 +155,10 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                 </View>
               </View>
 
+              {!!activeMission.pending.length && (
+                <Text style={styles.pendingMissionNotice}>Mission action saved on device · awaiting server confirmation</Text>
+              )}
+
               {/* Corridor Route */}
               <View style={styles.routeBox}>
                 <View style={styles.routeEndpoint}>
@@ -181,14 +187,14 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                     <TouchableOpacity 
                       style={[styles.btnAction, styles.btnPrimary]}
                       onPress={() => handleAction(activeMission.mission_id, 'accept')}
-                      disabled={busyAction !== null}
+                      disabled={busyAction !== null || !!activeMission.pending.length}
                     >
                       <Text style={styles.btnPrimaryText}>{t('acceptMission')}</Text>
                     </TouchableOpacity>
                     <TouchableOpacity 
                       style={[styles.btnAction, styles.btnSecondary]}
                       onPress={() => handleAction(activeMission.mission_id, 'reject')}
-                      disabled={busyAction !== null}
+                      disabled={busyAction !== null || !!activeMission.pending.length}
                     >
                       <Text style={styles.btnSecondaryText}>{t('rejectMission')}</Text>
                     </TouchableOpacity>
@@ -200,7 +206,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                     <TouchableOpacity 
                       style={[styles.btnAction, styles.btnPrimary]}
                       onPress={() => handleAction(activeMission.mission_id, 'start')}
-                      disabled={busyAction !== null}
+                      disabled={busyAction !== null || !!activeMission.pending.length}
                     >
                       <Text style={styles.btnPrimaryText}>{t('startMission')}</Text>
                     </TouchableOpacity>
@@ -219,7 +225,7 @@ export const MissionsHomeScreen: React.FC<Props> = ({
                     <TouchableOpacity 
                       style={[styles.btnAction, styles.btnSuccess]}
                       onPress={() => handleAction(activeMission.mission_id, 'declare-delivery')}
-                      disabled={busyAction !== null}
+                      disabled={busyAction !== null || !!activeMission.pending.length}
                     >
                       <CheckCircle2 size={16} color="#FFFFFF" />
                       <Text style={styles.btnSuccessText}>{t('declareDelivery')}</Text>
@@ -706,5 +712,10 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
     marginTop: 40,
-  }
+  },
+  pendingMissionNotice: {
+    color: Colors.warningDark,
+    fontSize: Typography.fontSizes.xs,
+    marginBottom: Spacing.sm,
+  },
 });
