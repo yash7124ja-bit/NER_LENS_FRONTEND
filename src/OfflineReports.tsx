@@ -21,9 +21,30 @@ export default function OfflineReports({ session, segments, authenticated = true
   const [photoCount, setPhotoCount] = useState(0);
   const [online, setOnline] = useState(navigator.onLine);
   const [busy, setBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [message, setMessage] = useState("");
   const [locale, setLocale] = useState("en");
-  const { register, handleSubmit, reset } = useForm<Fields>({ defaultValues: { status_claim: "unknown" } });
+  const { register, handleSubmit, reset, setValue } = useForm<Fields>({ defaultValues: { status_claim: "unknown" } });
+  const useDeviceLocation = () => {
+    if (!navigator.geolocation) { setMessage("Device location is unavailable. Enter coordinates manually."); return; }
+    setLocating(true);
+    setMessage("Requesting device location…");
+    navigator.geolocation.getCurrentPosition(position => {
+      setLocating(false);
+      const { latitude, longitude, accuracy } = position.coords;
+      if (![latitude, longitude, accuracy].every(Number.isFinite) || Math.abs(latitude) > 90 || Math.abs(longitude) > 180 || accuracy < 0 || accuracy > 100000) {
+        setMessage("Device location is too imprecise. Enter coordinates manually.");
+        return;
+      }
+      setValue("latitude", String(latitude));
+      setValue("longitude", String(longitude));
+      setValue("accuracy_m", String(accuracy));
+      setMessage(`Device location captured with ${Math.round(accuracy)} m accuracy. Confirm the road segment and observation time.`);
+    }, error => {
+      setLocating(false);
+      setMessage(error.code === 1 ? "Location permission denied. Enter coordinates manually or allow location and retry." : "Device location could not be determined. Enter coordinates manually or retry.");
+    }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  };
   const refresh = useCallback(async () => { setRows(await reportStore.reports.where("owner").equals(owner).sortBy("client_sequence")); setPhotoCount(await reportStore.media.where("owner").equals(owner).count()); }, [owner]);
   const synchronize = useCallback(async () => {
     if (!authenticated) { setMessage("Sign in again before sending saved reports."); return; }
@@ -73,11 +94,12 @@ export default function OfflineReports({ session, segments, authenticated = true
     <label>Safety copy language <select value={locale} onChange={event => setLocale(event.target.value)}><option value="en">English</option><option value="as">Assamese draft — unreviewed</option></select></label>
     <p lang={locale}>{language.t("safety", { lng: locale })}</p>
     {locale === "as" && <p>Assamese draft v1 — not reviewed by a native speaker; use English for operational decisions.</p>}
-    <p>Save the observation and up to four photos together on this device, then synchronize when connected. Enter a known location and its accuracy; this form does not request GPS. Saved reports and photos may contain sensitive location data.</p>
+    <p>Save the observation and up to four photos together on this device, then synchronize when connected. Use device location or enter known coordinates and accuracy. Location permission is requested only when you press the button. Saved reports and photos may contain sensitive location data.</p>
     {!session.user.roles.includes("field_reporter") && <p className="access-note"><strong>Field reporter access required.</strong> This account cannot submit observations. An administrator must assign the field reporter role.</p>}
     {session.user.roles.includes("field_reporter") && <form onSubmit={capture}>
       <label>Road segment<select required {...register("segment_id")}><option value="">Choose segment</option>{segments.map(segment => <option key={segment.segment_id} value={segment.segment_id}>{segmentName(segment)}</option>)}</select></label>
       <label>Observed time (device local timezone)<input type="datetime-local" required {...register("observed_at")} /></label>
+      <button type="button" disabled={locating} onClick={useDeviceLocation}>{locating ? "Finding location…" : "Use device location"}</button>
       <label>Latitude<input type="number" step="any" min="-90" max="90" required {...register("latitude")} /></label>
       <label>Longitude<input type="number" step="any" min="-180" max="180" required {...register("longitude")} /></label>
       <label>Location accuracy (metres)<input type="number" step="any" min="0" max="100000" required {...register("accuracy_m")} /></label>
