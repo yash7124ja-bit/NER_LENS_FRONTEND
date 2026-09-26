@@ -25,7 +25,7 @@ export default function ReportHistory({ reportId }: { reportId: string }) {
         headers: { "Content-Type": "application/json", "Idempotency-Key": pending.current.key },
         body: JSON.stringify({ note }), signal: AbortSignal.timeout(30000),
       });
-      if (!response.ok) throw new ApiError(response.status);
+      if (!response.ok) throw await ApiError.fromResponse(response);
       pending.current = null;
       await refresh();
     } catch (e) { setError(e instanceof Error ? e.message : "Response was not sent. Retry with the same note."); }

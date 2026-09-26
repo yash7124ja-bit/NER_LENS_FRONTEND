@@ -37,7 +37,7 @@ export default function Administration({ session, corridorId, manageUsers }: { s
       if(body.status_authority&&!body.roles.includes("district_officer"))throw Error("Status authority requires the District officer role.");
       if(!user)Object.assign(body,{display_name:d.get("name"),email:d.get("email"),password:d.get("password")});
       const r=await fetch(user?`/v1/admin/users/${user.actor_id}/roles`:"/v1/admin/users",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),signal:AbortSignal.timeout(30000)});
-      if(!r.ok)throw new ApiError(r.status);
+      if(!r.ok)throw await ApiError.fromResponse(r);
       if(!user)form.reset();setRevision(v=>v+1);setMessage(user?"Roles saved. The user should sign in again to refresh available controls.":"Account created. Share its credentials privately with the intended user.");
     }catch(e){setError(e instanceof Error?e.message:"Could not save account.");}finally{setBusy(false);}
   }

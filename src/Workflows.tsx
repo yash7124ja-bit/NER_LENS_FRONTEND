@@ -98,14 +98,14 @@ export default function Workflows({ session, corridor, segments, onChange, works
     const key = operation.key;
     const response = await fetch(path, { method: "POST", credentials: "same-origin", cache: "no-store",
       headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(operation.body), signal: AbortSignal.timeout(30000) });
-    if (!response.ok) throw new ApiError(response.status);
+    if (!response.ok) throw await ApiError.fromResponse(response);
     pending.current.delete(signature);
     return response.json();
   }
   async function act(work: () => Promise<unknown>, success: string) {
     setBusy(true); setError(""); setMessage("");
     try { await work(); setMissionDetail(null); setDetailRouteSelection(null); setDetailTimeline(null); setMessage(success); setRevision(r => r + 1); onChange(); }
-    catch (e) { setError(e instanceof Error ? e.message : "The action could not be completed. Retry with the same information."); }
+    catch (e) { if (e instanceof ApiError && e.reason) setComparison(null); setError(e instanceof Error ? e.message : "The action could not be completed. Retry with the same information."); }
     finally { setBusy(false); }
   }
   async function capturePosition(mission: Mission) {
@@ -129,6 +129,7 @@ export default function Workflows({ session, corridor, segments, onChange, works
       const impact = mission.state === "planned" ? null : missionImpacts?.assessments.find(item => item.mission_id === mission.mission_id && item.state === "active");
       if (mission.state !== "planned" && !impact) { setError("Refresh the impact assessment and choose a mission with an active candidate impact."); return; }
       void act(async () => {
+        setComparison(null);
         setComparison(await mutate("/v1/routes/compare", { origin: mission.origin, destination: mission.destination,
           corridor_id: corridor.corridor_id, graph_version_id: corridor.graph_version,
           mission_id: mission.mission_id, vehicle_profile: mission.vehicle_profile,

@@ -54,6 +54,28 @@ export type Catalog = {
 };
 export class ApiError extends Error {
   status: number;
+  reason?: string;
+  static async fromResponse(response: Response): Promise<ApiError> {
+    const error = new ApiError(response.status);
+    const routeMessages: Record<string, string> = {
+      source_snapshot_expired: "The route source has expired. Compare routes again before saving or approving a candidate.",
+      graph_version_changed: "The corridor graph has changed. Refresh the workspace and compare routes again.",
+      graph_or_mission_changed: "The mission or corridor graph has changed. Refresh the workspace and compare routes again.",
+      authority_decision_changed: "A road authority decision has changed. Refresh affected missions and compare routes again.",
+      decision_snapshot_changed: "A road authority decision has changed. Refresh affected missions and compare routes again.",
+      candidate_decision_changed: "A road authority decision has changed. Refresh affected missions and compare routes again.",
+      selected_route_changed: "The selected route has changed. Refresh the mission before choosing another candidate.",
+      upstream_unavailable: "The routing provider is unavailable. No fresh comparison was produced. Retry when the provider recovers.",
+    };
+    if (response.status !== 409 && response.status !== 502) return error;
+    try {
+      const body = await response.json();
+      const detail = Array.isArray(body?.error?.details)
+        ? body.error.details.find((item: {field?: string; reason?: string}) => item?.field === "route" && typeof item.reason === "string" && Object.hasOwn(routeMessages, item.reason)) : undefined;
+      if (detail) { error.reason = detail.reason; error.message = routeMessages[detail.reason]; }
+    } catch { /* Non-JSON failures retain the status-based message. */ }
+    return error;
+  }
   constructor(status: number) {
     super(
       status === 401
@@ -67,7 +89,7 @@ export class ApiError extends Error {
               : status === 404
             ? "The requested record was not found. Refresh the workspace; if it persists, report the action to your administrator."
             : status === 503
-              ? "The service is not ready. Check the database and try again."
+              ? "The service is temporarily unavailable. Your action has not been confirmed; retry shortly."
               : `Request failed (${status}). Please try again.`,
     );
     this.status = status;
@@ -90,7 +112,7 @@ export async function request<T>(
       : AbortSignal.timeout(15000),
     cache: "no-store",
   });
-  if (!response.ok) throw new ApiError(response.status);
+  if (!response.ok) throw await ApiError.fromResponse(response);
   return response.status === 204
     ? (undefined as T)
     : (response.json() as Promise<T>);
