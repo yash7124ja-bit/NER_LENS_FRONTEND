@@ -162,8 +162,12 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
     try {
       const reportId = Crypto.randomUUID();
       const savedPhotos = photos.map((uri, index) => {
+        const photo = new File(uri);
+        if (!photo.size || photo.size > 8 * 1024 * 1024) {
+          throw new Error('A selected photo is empty or over the 8 MB upload limit. Choose a smaller image.');
+        }
         const target = new File(Paths.document, `${reportId}-${index + 1}.jpg`);
-        new File(uri).copy(target);
+        photo.copy(target);
         return target.uri;
       });
       const newReport: FieldReport = {
@@ -376,6 +380,7 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
               <Text style={styles.reportMeta}>
                 Condition: {rep.condition.replace('_', ' ')} · {new Date(rep.observed_time).toLocaleTimeString()}
               </Text>
+              {!!rep.last_error && <Text style={styles.reportMeta}>Retry needed: {rep.last_error}</Text>}
             </View>
           ))
         )}

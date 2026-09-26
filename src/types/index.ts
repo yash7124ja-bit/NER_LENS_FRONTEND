@@ -129,6 +129,7 @@ export interface FieldReport {
   photo_hashes?: string[];
   server_report_id?: string;
   uploaded_photo_slots?: number[];
+  last_error?: string;
   sync_state: 'saved_on_device' | 'sending' | 'media_pending' | 'acknowledged' | 'failed';
   created_at: string;
 }

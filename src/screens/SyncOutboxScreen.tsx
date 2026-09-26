@@ -180,6 +180,7 @@ export const SyncOutboxScreen: React.FC<Props> = ({ session, onNavigateTab, onOp
                 </View>
               </View>
               <Text style={styles.itemMeta}>{r.photo_uris.length} photos attached · {r.coordinates[1].toFixed(4)}°N, {r.coordinates[0].toFixed(4)}°E</Text>
+              {!!r.last_error && <Text style={styles.itemMeta}>Retry needed: {r.last_error}</Text>}
             </View>
           ))
         )}

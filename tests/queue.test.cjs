@@ -69,6 +69,7 @@ test('photo reports stay pending through upload failure and clear only after ser
   await manager.syncAll('reporter');
   assert.equal(state.reports[0].server_report_id, 'server-f1');
   assert.equal(state.reports[0].sync_state, 'media_pending');
+  assert.equal(state.reports[0].last_error, 'Scanner unavailable');
   assert.equal(await manager.getPendingCount('reporter'), 1);
   await manager.syncAll('reporter');
   assert.deepEqual(Array.from(state.reports[0].uploaded_photo_slots), [0]);

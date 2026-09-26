@@ -20,6 +20,9 @@ import {
 } from './storage';
 import { ApiClient } from './api';
 
+const errorMessage = (error: unknown) =>
+  error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error);
+
 export class SyncQueueManager {
   private static isSyncing = false;
   private static resyncOwner: string | null = null;
@@ -229,9 +232,11 @@ export class SyncQueueManager {
             const receipt = await ApiClient.submitFieldReport(report);
             report.server_report_id = receipt.field_report_id;
             report.sync_state = report.photo_uris.length ? 'media_pending' : 'acknowledged';
+            report.last_error = undefined;
             await saveFieldReports(owner, reports);
-          } catch {
+          } catch (error) {
             report.sync_state = 'saved_on_device';
+            report.last_error = errorMessage(error);
             await saveFieldReports(owner, reports);
           }
         }
@@ -243,13 +248,19 @@ export class SyncQueueManager {
               if (report.uploaded_photo_slots.includes(slot)) continue;
               await ApiClient.uploadReportMedia(report.server_report_id, report.client_report_id, slot, uri);
               report.uploaded_photo_slots.push(slot);
+              report.last_error = undefined;
               await saveFieldReports(owner, reports);
             }
             if (await ApiClient.fetchReportMediaState(report.server_report_id) === 'complete') {
               report.sync_state = 'acknowledged';
-              await saveFieldReports(owner, reports);
+              report.last_error = undefined;
+            } else {
+              report.last_error = 'Server media clearance is still pending';
             }
+            await saveFieldReports(owner, reports);
           } catch (error) {
+            report.last_error = errorMessage(error);
+            await saveFieldReports(owner, reports);
             console.error('[SyncQueue] Media remains pending:', error);
           }
         }
