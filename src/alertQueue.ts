@@ -7,18 +7,25 @@ export async function cachedRouteAlerts(owner: string, db: ReportStore = reportS
 
 export async function cacheRouteAlerts(owner: string, received: Omit<CachedRouteAlert, "owner">[], db: ReportStore = reportStore) {
   if (!owner) throw new Error("Sign in before loading alerts");
-  for (const alert of received) {
-    if (!alert.alert_id || !alert.mission_id || !alert.route_id || !alert.created_at || !alert.expires_at)
-      throw new Error("Invalid route alert received");
-    const old = await db.alerts.get(alert.alert_id);
-    if (old && old.owner !== owner) throw new Error("Route alert belongs to another account");
-    await db.alerts.put({ ...alert, owner,
-      ...(old?.pending_decision && !alert.acknowledgment ? {
-        pending_decision: old.pending_decision, idempotency_key: old.idempotency_key,
-        sync_state: old.sync_state,
-      } : {}),
-    });
-  }
+  await db.transaction("rw", db.alerts, async () => {
+    const seen = new Set<string>();
+    for (const alert of received) {
+      if (!alert.alert_id || !alert.mission_id || !alert.route_id || !alert.created_at || !alert.expires_at)
+        throw new Error("Invalid route alert received");
+      const old = await db.alerts.get(alert.alert_id);
+      if (old && old.owner !== owner) throw new Error("Route alert belongs to another account");
+      seen.add(alert.alert_id);
+      await db.alerts.put({ ...alert, owner,
+        ...(old?.pending_decision && !alert.acknowledgment ? {
+          pending_decision: old.pending_decision, idempotency_key: old.idempotency_key,
+          sync_state: old.sync_state,
+        } : {}),
+      });
+    }
+    for (const old of await db.alerts.where("owner").equals(owner).toArray()) {
+      if (!seen.has(old.alert_id) && !old.pending_decision) await db.alerts.delete(old.alert_id);
+    }
+  });
   return cachedRouteAlerts(owner, db);
 }
 

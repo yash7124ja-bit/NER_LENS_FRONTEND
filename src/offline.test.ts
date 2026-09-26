@@ -134,6 +134,19 @@ test("route alert decision survives restart, stays with its owner, and retries t
   assert.equal(calls, 2);
   await db.delete();
 });
+test("successful alert refresh removes withdrawn alerts without dropping unsent decisions", async () => {
+  const db = new ReportStore(crypto.randomUUID());
+  const alert = { alert_id: "alert-1", mission_id: "mission-1", route_id: "route-1",
+    message: "Review candidate", reason: "Restriction", created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 600000).toISOString(), delivery_state: "delivered_in_app",
+    acknowledgment: null };
+  await cacheRouteAlerts("alice", [alert, { ...alert, alert_id: "alert-2" }], db);
+  await queueRouteAlertDecision("alice", "alert-2", "decline", db);
+  await cacheRouteAlerts("alice", [], db);
+  assert.deepEqual((await cachedRouteAlerts("alice", db)).map(item => item.alert_id), ["alert-2"]);
+  assert.equal((await db.alerts.get("alert-2"))?.pending_decision, "decline");
+  await db.delete();
+});
 test("photos bind to local report, survive restart, and retry the same checksum after lost acknowledgement", async () => {
   const name = crypto.randomUUID();
   let db = new ReportStore(name);
