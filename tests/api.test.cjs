@@ -75,6 +75,20 @@ test('field report sends the server contract', async () => {
   assert.equal(body.condition_code, 'landslide');
 });
 
+test('field reporter can load segments from authorized corridors without a driver mission', async () => {
+  const paths = [];
+  const api = client(async (url) => {
+    paths.push(url);
+    return new Response(JSON.stringify(url.endsWith('/corridors')
+      ? { corridors: [{ corridor_version_id: 'version-1' }] }
+      : { segments: [{ segment_id: 'segment-1', external_refs: [{ id: 'Road 1' }] }] }));
+  });
+  const corridors = await api.fetchCorridors();
+  const segments = await api.fetchReportSegments(corridors.map(c => c.corridor_version_id));
+  assert.deepEqual(paths, ['https://api.example/v1/corridors', 'https://api.example/v1/corridors/version-1/state?limit=200']);
+  assert.equal(segments[0].segment_id, 'segment-1');
+});
+
 test('rejected GPS points are not acknowledged', async () => {
   const api = client(async () => new Response(JSON.stringify({ accepted: [], duplicate: [], rejected: [1], flagged: [] }), { status: 201 }));
   await assert.rejects(api.sendGpsBatch('mission-1', 'device-1', 1, [

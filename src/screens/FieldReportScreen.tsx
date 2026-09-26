@@ -13,7 +13,7 @@ import {
 import { HeaderBar } from '../components/HeaderBar';
 import { Colors, Spacing, Typography, TouchTargets } from '../theme';
 import { Session, FieldReport, IncidentType, ReportSegment } from '../types';
-import { getFieldReports, getCachedMissions, getDeviceId, getReportSegments, saveReportSegments } from '../services/storage';
+import { getFieldReports, getDeviceId, getReportSegments, saveReportSegments } from '../services/storage';
 import { ApiClient } from '../services/api';
 import { SyncQueueManager } from '../services/syncQueue';
 import * as ImagePicker from 'expo-image-picker';
@@ -79,8 +79,8 @@ export const FieldReportScreen: React.FC<Props> = ({ session, onNavigateTab, onO
       const cached = await getReportSegments(owner);
       setSegments(cached);
       try {
-        const missions = await getCachedMissions(owner);
-        const fresh = await ApiClient.fetchReportSegments([...new Set(missions.map(m => m.corridor_id))]);
+        const corridors = await ApiClient.fetchCorridors();
+        const fresh = await ApiClient.fetchReportSegments(corridors.map(c => c.corridor_version_id));
         await saveReportSegments(owner, fresh);
         setSegments(fresh);
       } catch { /* Keep the owner's previously saved segment list offline. */ }
