@@ -15,6 +15,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
+      - run: npm install --package-lock-only --ignore-scripts --no-audit
       - run: npm ci
       - run: npm test
       - run: npx tsc --noEmit
