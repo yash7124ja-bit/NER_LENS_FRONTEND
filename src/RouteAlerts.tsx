@@ -3,6 +3,12 @@ import { request, type Session } from "./api";
 import { type CachedRouteAlert } from "./offline";
 import { cacheRouteAlerts, cachedRouteAlerts, queueRouteAlertDecision, syncRouteAlertDecisions } from "./alertQueue";
 
+const readable = (s: string) => s.replaceAll("_", " ");
+function AlertConstraints({ alert }: { alert: CachedRouteAlert }) {
+  const ageMinutes = alert.retrieved_at ? Math.max(0, Math.round((Date.now() - new Date(alert.retrieved_at).getTime()) / 60000)) : null;
+  return <p className="help">Candidate {readable(alert.vehicle_profile ?? "unknown vehicle")} profile ({readable(alert.vehicle_entitlement ?? "entitlement unverified")}) · {ageMinutes === null ? "Source age unknown" : `Source age ${ageMinutes} min`} · Uncertainty {alert.uncertainty_score ?? "not measured"} · {alert.linked_segment_count ?? 0} linked bands</p>;
+}
+
 export default function RouteAlerts({ session, authenticated }: { session: Session; authenticated: boolean }) {
   const owner = session.user.actor_id;
   const [alerts, setAlerts] = useState<CachedRouteAlert[]>([]);
@@ -51,6 +57,7 @@ export default function RouteAlerts({ session, authenticated }: { session: Sessi
       {alerts.map(alert => <article className="mission-row" key={alert.alert_id}>
         <div><h3>Mission {alert.mission_id}</h3><p>{alert.message}</p><p>Dispatcher reason: {alert.reason}</p><p>Candidate route {alert.route_id} · expires {new Date(alert.expires_at).toLocaleString()}</p>
           <p className="help">{alert.delivery_state.replaceAll("_", " ")} · {alert.acknowledgment ? `Driver ${alert.acknowledgment.decision === "accept" ? "accepted" : "declined"} this candidate` : alert.pending_decision ? `${alert.pending_decision} saved on device · ${alert.sync_state?.replaceAll("_", " ")}` : "Awaiting your decision"}</p>
+          <AlertConstraints alert={alert} />
           {alert.acknowledgment?.decision === "accept" && <p className="notice">The candidate replay baseline was selected after a fresh server check. Check current authority decisions before travel.</p>}
           {alert.sync_state === "conflict" && <p className="notice error">The server rejected this saved decision. Ask the dispatcher to reassess the route.</p>}
         </div>

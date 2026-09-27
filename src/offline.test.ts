@@ -134,6 +134,24 @@ test("route alert decision survives restart, stays with its owner, and retries t
   assert.equal(calls, 2);
   await db.delete();
 });
+test("route alert constraint, source age and uncertainty fields survive cache and restart", async () => {
+  const name = crypto.randomUUID();
+  let db = new ReportStore(name);
+  const alert = { alert_id: crypto.randomUUID(), mission_id: "mission-1", route_id: "route-2",
+    message: "Review candidate", reason: "Authority restriction", created_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 600000).toISOString(), delivery_state: "delivered_in_app",
+    acknowledgment: null, vehicle_profile: "rigid_truck", vehicle_entitlement: "unverified_car_baseline",
+    retrieved_at: new Date().toISOString(), uncertainty_score: 0.4, linked_segment_count: 2 };
+  await cacheRouteAlerts("alice", [alert], db);
+  db.close();
+  db = new ReportStore(name);
+  const restored = (await cachedRouteAlerts("alice", db))[0];
+  assert.equal(restored.vehicle_profile, "rigid_truck");
+  assert.equal(restored.uncertainty_score, 0.4);
+  assert.equal(restored.linked_segment_count, 2);
+  assert.equal(restored.retrieved_at, alert.retrieved_at);
+  await db.delete();
+});
 test("successful alert refresh removes withdrawn alerts without dropping unsent decisions", async () => {
   const db = new ReportStore(crypto.randomUUID());
   const alert = { alert_id: "alert-1", mission_id: "mission-1", route_id: "route-1",

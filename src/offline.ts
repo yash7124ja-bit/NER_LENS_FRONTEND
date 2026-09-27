@@ -23,6 +23,8 @@ export type CachedRouteAlert = {
   alert_id: string; owner: string; mission_id: string; route_id: string; message: string;
   reason: string; created_at: string; expires_at: string; delivery_state: string;
   acknowledgment: { decision: string; acknowledged_at: string; selection_id: string | null } | null;
+  vehicle_profile?: string | null; vehicle_entitlement?: string | null;
+  retrieved_at?: string | null; uncertainty_score?: number | null; linked_segment_count?: number;
   pending_decision?: "accept" | "decline"; idempotency_key?: string;
   sync_state?: "saved_on_device" | "retry_pending" | "reauth_required" | "conflict";
 };
